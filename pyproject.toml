@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "macroscan"
+version = "0.1.0"
+description = "Ingest, transform and visualize cross-country macroeconomic data"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31", "pandas>=2.2", "pyarrow>=15"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "responses>=0.25"]
+
+[project.scripts]
+macroscan = "macroscan.b_ingest.b4_run:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*_test_*.py"]
