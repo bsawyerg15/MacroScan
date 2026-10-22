@@ -1,6 +1,7 @@
 """OECD SDMX REST API (https://sdmx.oecd.org/public/rest).
 
-Indicators are configured as named dimension filters (FREQ=Q;TRANSACTION=B1GQ).
+Series are configured as named dimension filters (TRANSACTION=B1GQ) plus a
+frequency, which fills the FREQ dimension.
 The dataflow's structure is fetched once and cached so filters can be placed in
 the positional SDMX key, e.g. Q.Y.USA+DEU.S1..B1GQ.......
 """
@@ -18,8 +19,8 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from macroscan.a_core.a1_config import IndicatorSpec
-from macroscan.a_core.a2_schema import FETCH_COLUMNS, PANDAS_FREQ, parse_periods
+from macroscan.a_core.a1_config import SeriesSpec
+from macroscan.a_core.a2_schema import FETCH_COLUMNS, parse_periods
 from macroscan.b_ingest.b1_sources.base import Source, register
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ BASE_URL = "https://sdmx.oecd.org/public/rest"
 STRUCTURE_ACCEPT = "application/vnd.sdmx.structure+json; version=2; charset=utf-8"
 DATA_ACCEPT = "application/vnd.sdmx.data+csv; charset=utf-8; labels=both"
 COUNTRY_DIM = "REF_AREA"
+FREQ_DIM = "FREQ"
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
@@ -239,7 +241,7 @@ def _retry_after(resp: requests.Response) -> float | None:
 
 @register
 class OECDSource(Source):
-    """Source for OECD indicators configured as named dimension filters."""
+    """Source for OECD series configured as named dimension filters plus a frequency."""
     name = "oecd"
 
     def __init__(self, cache_dir: Path, refresh_structures: bool = False, client: OECDClient | None = None):
@@ -271,14 +273,14 @@ class OECDSource(Source):
         self._structures[flow.label] = structure
         return structure
 
-    def fetch(self, spec: IndicatorSpec, countries: list[str]) -> pd.DataFrame:
-        """Fetch one indicator for the given countries as a canonical frame.
+    def fetch(self, spec: SeriesSpec, countries: list[str]) -> pd.DataFrame:
+        """Fetch one series for the given countries as a canonical frame.
 
         Returns an empty frame (with a warning) when OECD has no data for the key.
         """
         flow = Dataflow.parse(spec.dataflow)
         structure = self.structure(flow)
-        key = build_key(structure, spec.filters, countries)
+        key = build_key(structure, {FREQ_DIM: (spec.frequency,), **spec.filters}, countries)
         params = {"dimensionAtObservation": "AllDimensions"}
         if spec.start:
             params["startPeriod"] = spec.start
@@ -289,7 +291,7 @@ class OECDSource(Source):
         resp = self.client.get(f"data/{flow.agency},{flow.id},{version}/{key}", DATA_ACCEPT, params)
         self.last_request_url = resp.url
         if resp.status_code == 404 or (resp.ok and not resp.text.strip()):
-            log.warning("%s: no data returned for key %s", spec.id, key)
+            log.warning("%s: no data returned for key %s", spec.label, key)
             return normalize("", spec, structure)
         if not resp.ok:
             raise OECDError(f"HTTP {resp.status_code} from {resp.url}: {resp.text[:300]}")
@@ -301,7 +303,7 @@ def _code(value: str) -> str:
     return value.split(": ", 1)[0] if isinstance(value, str) else value
 
 
-def normalize(csv_text: str, spec: IndicatorSpec, structure: Structure) -> pd.DataFrame:
+def normalize(csv_text: str, spec: SeriesSpec, structure: Structure) -> pd.DataFrame:
     """Turn OECD SDMX-CSV (labels=both) into the canonical fetch frame."""
     if not csv_text.strip():
         return pd.DataFrame({c: pd.Series(dtype="object") for c in FETCH_COLUMNS})
@@ -312,12 +314,9 @@ def normalize(csv_text: str, spec: IndicatorSpec, structure: Structure) -> pd.Da
         if col in raw:
             raw[col] = raw[col].map(_code)
 
-    freqs = raw["FREQ"].unique().tolist() if "FREQ" in raw else []
-    if len(freqs) != 1:
-        raise ValueError(f"{spec.id}: expected one frequency, got {freqs}; add FREQ=... to filters")
-    freq = freqs[0]
-    if freq not in PANDAS_FREQ:
-        raise ValueError(f"{spec.id}: frequency {freq!r} not supported (use one of {sorted(PANDAS_FREQ)})")
+    freqs = sorted(raw[FREQ_DIM].unique()) if FREQ_DIM in raw else []
+    if freqs != [spec.frequency]:
+        raise ValueError(f"{spec.label}: expected frequency {spec.frequency} in the response, got {freqs}")
 
     _check_one_series_per_country(raw, spec, dim_ids)
 
@@ -329,11 +328,11 @@ def normalize(csv_text: str, spec: IndicatorSpec, structure: Structure) -> pd.Da
 
     out = pd.DataFrame(
         {
-            "source": "oecd",
-            "indicator": spec.id,
+            "source": spec.source,
+            "indicator": spec.indicator,
             "country": raw[COUNTRY_DIM],
-            "period": parse_periods(raw["TIME_PERIOD"], freq),
-            "frequency": freq,
+            "period": parse_periods(raw["TIME_PERIOD"], spec.frequency),
+            "frequency": spec.frequency,
             "value": pd.to_numeric(raw["OBS_VALUE"].replace("", None), errors="coerce").astype("float64"),
             "unit": unit,
             "status": raw["OBS_STATUS"].replace("", None) if "OBS_STATUS" in raw else None,
@@ -349,7 +348,7 @@ def _unit_mult_label(code: str) -> str:
     return names.get(code, f"x1e{code}")
 
 
-def _check_one_series_per_country(raw: pd.DataFrame, spec: IndicatorSpec, dim_ids: list[str]) -> None:
+def _check_one_series_per_country(raw: pd.DataFrame, spec: SeriesSpec, dim_ids: list[str]) -> None:
     """Filters must narrow the dataflow to a single series per country."""
     series_dims = [d for d in dim_ids if d != COUNTRY_DIM and d in raw]
     per_country = raw.groupby(COUNTRY_DIM)[series_dims].nunique()
@@ -357,7 +356,7 @@ def _check_one_series_per_country(raw: pd.DataFrame, spec: IndicatorSpec, dim_id
     if varying:
         detail = "; ".join(f"{d} in {sorted(raw[d].unique())[:8]}" for d in varying)
         raise ValueError(
-            f"{spec.id}: filters match several series per country. "
+            f"{spec.label}: filters match several series per country. "
             f"Pin these dimensions in filters: {detail}"
         )
 

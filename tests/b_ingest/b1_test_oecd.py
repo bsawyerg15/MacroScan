@@ -2,16 +2,16 @@ import pandas as pd
 import pytest
 import responses
 
-from macroscan.a_core.a1_config import IndicatorSpec
+from macroscan.a_core.a1_config import SeriesSpec
 from macroscan.b_ingest.b1_sources.oecd import BASE_URL, Dataflow, OECDClient, OECDSource, build_key, normalize, parse_structure
 from macroscan.b_ingest.b2_validate import validate_frame
 
 FLOW = "OECD.SDD.NAD:DSD_NAMAIN1@DF_QNA"
 GDP_FILTERS = {
-    "FREQ": ("Q",), "ADJUSTMENT": ("Y",), "SECTOR": ("S1",), "TRANSACTION": ("B1GQ",),
+    "ADJUSTMENT": ("Y",), "SECTOR": ("S1",), "TRANSACTION": ("B1GQ",),
     "UNIT_MEASURE": ("XDC",), "PRICE_BASE": ("LR",), "TRANSFORMATION": ("LA",),
 }
-SPEC = IndicatorSpec("gdp_real_q", "GDP", "oecd", FLOW, GDP_FILTERS, start="2025-Q1")
+SPEC = SeriesSpec("oecd", "Real GDP", "Q", FLOW, GDP_FILTERS, start="2025-Q1")
 
 
 def test_dataflow_parse():
@@ -33,7 +33,7 @@ def test_parse_structure(qna_structure_payload):
 def test_build_key(qna_structure_payload):
     """Filters and countries land in the right key positions; others are blank."""
     s = parse_structure(qna_structure_payload, Dataflow.parse(FLOW))
-    assert build_key(s, GDP_FILTERS, ["USA", "DEU"]) == "Q.Y.USA+DEU.S1..B1GQ....XDC.LR.LA."
+    assert build_key(s, {"FREQ": ("Q",), **GDP_FILTERS}, ["USA", "DEU"]) == "Q.Y.USA+DEU.S1..B1GQ....XDC.LR.LA."
 
 
 def test_build_key_errors(qna_structure_payload):
@@ -48,8 +48,9 @@ def test_build_key_errors(qna_structure_payload):
 def test_normalize(qna_structure_payload, qna_gdp_csv):
     """OECD CSV becomes a valid canonical frame with codes, periods and units."""
     s = parse_structure(qna_structure_payload, Dataflow.parse(FLOW))
-    df = validate_frame(normalize(qna_gdp_csv, SPEC, s), SPEC.id)
+    df = validate_frame(normalize(qna_gdp_csv, SPEC, s), SPEC)
     assert set(df["country"]) == {"USA", "DEU"}
+    assert set(df["indicator"]) == {"Real GDP"} and set(df["frequency"]) == {"Q"}
     assert df["period"].dtype == pd.PeriodDtype("Q")
     assert df["period"].min() == pd.Period("2025Q1")
     assert df["unit"].iloc[0] == "XDC (millions)"
@@ -63,6 +64,13 @@ def test_normalize_rejects_several_series(qna_structure_payload, qna_gdp_csv):
     extra = qna_gdp_csv.splitlines()[1].replace("B1GQ: Gross domestic product", "P3: Final consumption expenditure")
     with pytest.raises(ValueError, match="Pin these dimensions.*TRANSACTION"):
         normalize(qna_gdp_csv + extra + "\n", SPEC, s)
+
+
+def test_normalize_rejects_other_frequency(qna_structure_payload, qna_gdp_csv):
+    """A response at a different frequency than configured is an error."""
+    s = parse_structure(qna_structure_payload, Dataflow.parse(FLOW))
+    with pytest.raises(ValueError, match="expected frequency M"):
+        normalize(qna_gdp_csv, SeriesSpec("oecd", "Real GDP", "M", FLOW, GDP_FILTERS), s)
 
 
 @responses.activate

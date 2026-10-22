@@ -1,4 +1,4 @@
-"""Append-only change log of observations, one Parquet file per indicator.
+"""Append-only change log of observations, one Parquet file per (source, indicator, frequency).
 
 Each ingest appends only the rows that are new or changed since the latest
 stored value (plus tombstones, value=NaN, for observations that disappeared).
@@ -15,7 +15,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from macroscan.a_core.a2_schema import FETCH_COLUMNS, PANDAS_FREQ, STORED_COLUMNS, parse_periods
+from macroscan.a_core.a1_config import slug
+from macroscan.a_core.a2_schema import FETCH_COLUMNS, STORED_COLUMNS, parse_periods
 
 DEFAULT_ROOT = Path("data/b_ingest")
 KEY = ["country", "period"]
@@ -25,7 +26,7 @@ TRACKED = ["value", "status", "unit"]
 
 @dataclass
 class ChangeSummary:
-    """What one ingest of an indicator changed."""
+    """What one ingest of a series changed."""
     new: int = 0
     revised: int = 0
     withdrawn: int = 0
@@ -39,29 +40,32 @@ class ChangeSummary:
 
 
 class Store:
-    """Reads and writes the per-indicator change logs and the manifest."""
+    """Reads and writes the per-series change logs and the manifest."""
     def __init__(self, root: Path = DEFAULT_ROOT):
         """Use `root` (default data/b_ingest) as the storage directory."""
         self.root = Path(root)
 
     # --- paths & raw io ---------------------------------------------------
 
-    def path(self, source: str, indicator: str) -> Path:
-        """Parquet path for one indicator's change log."""
-        return self.root / source / f"{indicator}.parquet"
+    def path(self, source: str, indicator: str, frequency: str) -> Path:
+        """Parquet path for one series' change log, e.g. oecd/real_gdp_Q.parquet."""
+        return self.root / source / f"{slug(indicator)}_{frequency}.parquet"
 
-    def _find(self, indicator: str, source: str | None) -> Path:
-        """Path for an indicator, searching all sources when `source` is None."""
+    def _find(self, indicator: str, frequency: str, source: str | None) -> Path:
+        """Path for an (indicator, frequency), searching all sources when `source` is None."""
         if source:
-            return self.path(source, indicator)
-        matches = sorted(self.root.glob(f"*/{indicator}.parquet"))
+            return self.path(source, indicator, frequency)
+        matches = sorted(self.root.glob(f"*/{slug(indicator)}_{frequency}.parquet"))
         if not matches:
-            raise FileNotFoundError(f"no stored data for indicator {indicator!r} under {self.root}")
+            raise FileNotFoundError(f"no stored data for {indicator!r} at frequency {frequency} under {self.root}")
+        if len(matches) > 1:
+            sources = ", ".join(m.parent.name for m in matches)
+            raise ValueError(f"{indicator!r} at frequency {frequency} is stored by several sources ({sources}); pass source=")
         return matches[0]
 
-    def load_log(self, source: str, indicator: str) -> pd.DataFrame:
-        """The raw change log for an indicator (empty frame if none stored)."""
-        return _read(self.path(source, indicator))
+    def load_log(self, source: str, indicator: str, frequency: str) -> pd.DataFrame:
+        """The raw change log for a series (empty frame if none stored)."""
+        return _read(self.path(source, indicator, frequency))
 
     # --- write ------------------------------------------------------------
 
@@ -70,6 +74,7 @@ class Store:
         pulled: pd.DataFrame,
         source: str,
         indicator: str,
+        frequency: str,
         requested_countries: list[str] | None = None,
         pulled_at: datetime | None = None,
     ) -> ChangeSummary:
@@ -85,7 +90,7 @@ class Store:
         if pulled.empty:
             return summary
 
-        path = self.path(source, indicator)
+        path = self.path(source, indicator, frequency)
         log_df = _read(path)
         latest = _latest(log_df)
         latest = latest[latest["value"].notna()]  # tombstoned keys count as absent
@@ -112,46 +117,49 @@ class Store:
             appended = pd.concat(frames, ignore_index=True).assign(pulled_at=pulled_at)
             combined = pd.concat([log_df, appended], ignore_index=True) if len(log_df) else appended
             _write(path, combined[STORED_COLUMNS])
-        self._update_manifest(source, indicator, summary, pulled_at, path)
+        self._update_manifest(_manifest_key(source, indicator, frequency), summary, pulled_at, path)
         return summary
 
-    def record_request(self, source: str, indicator: str, url: str | None) -> None:
-        """Remember the request URL used for an indicator's last pull."""
+    def record_request(self, source: str, indicator: str, frequency: str, url: str | None) -> None:
+        """Remember the request URL used for a series' last pull."""
         manifest = self.manifest()
-        manifest.setdefault(f"{source}/{indicator}", {})["request_url"] = url
+        manifest.setdefault(_manifest_key(source, indicator, frequency), {})["request_url"] = url
         self._write_manifest(manifest)
 
     # --- read -------------------------------------------------------------
 
     def read_history(
-        self, indicator: str, source: str | None = None, country: str | None = None, period: str | None = None
+        self,
+        indicator: str,
+        frequency: str,
+        source: str | None = None,
+        country: str | None = None,
+        period: str | None = None,
     ) -> pd.DataFrame:
         """Every stored version of every observation (the revision trail)."""
-        df = _read(self._find(indicator, source))
+        df = _read(self._find(indicator, frequency, source))
         if country:
             df = df[df["country"] == country]
         if period:
             df = df[df["period"].astype(str) == str(pd.Period(period, freq=df["period"].dtype.freq))]
         return df.sort_values([*KEY, "pulled_at"]).reset_index(drop=True)
 
-    def read_as_of(self, indicator: str, when, source: str | None = None) -> pd.DataFrame:
+    def read_as_of(self, indicator: str, frequency: str, when, source: str | None = None) -> pd.DataFrame:
         """The data as it looked at `when` (tz-naive is treated as UTC)."""
         when = pd.Timestamp(when)
         if when.tzinfo is None:
             when = when.tz_localize("UTC")
-        df = _read(self._find(indicator, source))
-        latest = _latest(df[df["pulled_at"] <= when])
-        return latest[latest["value"].notna()].reset_index(drop=True)
+        df = _read(self._find(indicator, frequency, source))
+        return _current(df[df["pulled_at"] <= when])
 
-    def read_latest(self, indicator: str, source: str | None = None) -> pd.DataFrame:
+    def read_latest(self, indicator: str, frequency: str, source: str | None = None) -> pd.DataFrame:
         """Today's data: the latest value per (country, period), withdrawn rows dropped."""
-        latest = _latest(_read(self._find(indicator, source)))
-        return latest[latest["value"].notna()].reset_index(drop=True)
+        return _current(_read(self._find(indicator, frequency, source)))
 
-    def read_all_latest(self, source: str | None = None) -> pd.DataFrame:
-        """Latest data for every stored indicator. Periods become strings when frequencies mix."""
-        paths = sorted(self.root.glob(f"{source or '*'}/*.parquet"))
-        frames = [self.read_latest(p.stem, p.parent.name) for p in paths]
+    def read_all_latest(self, frequency: str, source: str | None = None) -> pd.DataFrame:
+        """Latest data for every stored indicator at one frequency, so periods share a dtype."""
+        paths = sorted(self.root.glob(f"{source or '*'}/*_{frequency}.parquet"))
+        frames = [_current(_read(p)) for p in paths]
         frames = [f for f in frames if len(f)]
         return pd.concat(frames, ignore_index=True) if frames else _empty()
 
@@ -173,10 +181,10 @@ class Store:
         self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         self.manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
-    def _update_manifest(self, source, indicator, summary: ChangeSummary, pulled_at, path: Path) -> None:
+    def _update_manifest(self, key: str, summary: ChangeSummary, pulled_at, path: Path) -> None:
         """Record pull/change times, the run summary and stored row count."""
         manifest = self.manifest()
-        entry = manifest.setdefault(f"{source}/{indicator}", {})
+        entry = manifest.setdefault(key, {})
         entry["last_pulled_at"] = pulled_at.isoformat()
         if summary.appended:
             entry["last_changed_at"] = pulled_at.isoformat()
@@ -186,6 +194,11 @@ class Store:
 
 
 # --- helpers ------------------------------------------------------------------
+
+
+def _manifest_key(source: str, indicator: str, frequency: str) -> str:
+    """Manifest entry key for a series, e.g. 'oecd/real_gdp/Q'."""
+    return f"{source}/{slug(indicator)}/{frequency}"
 
 
 def _empty() -> pd.DataFrame:
@@ -203,14 +216,21 @@ def _write(path: Path, df: pd.DataFrame) -> None:
 
 
 def _read(path: Path) -> pd.DataFrame:
-    """Read a change log, restoring the Period dtype (empty frame if missing)."""
+    """Read a change log, restoring the Period dtype (empty frame if missing).
+
+    Each file holds a single frequency, taken from its name (real_gdp_Q.parquet).
+    """
     if not path.exists():
         return _empty()
     df = pd.read_parquet(path)
-    freqs = df["frequency"].unique().tolist()
-    if len(freqs) == 1 and freqs[0] in PANDAS_FREQ:
-        df["period"] = parse_periods(df["period"], freqs[0])
+    df["period"] = parse_periods(df["period"], path.stem.rsplit("_", 1)[1])
     return df
+
+
+def _current(log_df: pd.DataFrame) -> pd.DataFrame:
+    """Latest value per (country, period) with withdrawn observations dropped."""
+    latest = _latest(log_df)
+    return latest[latest["value"].notna()].reset_index(drop=True)
 
 
 def _latest(log_df: pd.DataFrame) -> pd.DataFrame:

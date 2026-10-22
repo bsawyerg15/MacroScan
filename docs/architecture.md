@@ -18,12 +18,15 @@ flowchart LR
     b_ingest_b3_store["b3_store"]
     b_ingest_b4_run["b4_run"]
   end
+  a_core_a2_schema --> a_core_a1_config
   b_ingest_b1_sources_base --> b_ingest_b1_sources
   a_core_a1_config --> b_ingest_b1_sources_base
   a_core_a1_config --> b_ingest_b1_sources_oecd
   a_core_a2_schema --> b_ingest_b1_sources_oecd
   b_ingest_b1_sources_base --> b_ingest_b1_sources_oecd
+  a_core_a1_config --> b_ingest_b2_validate
   a_core_a2_schema --> b_ingest_b2_validate
+  a_core_a1_config --> b_ingest_b3_store
   a_core_a2_schema --> b_ingest_b3_store
   a_core_a1_config --> b_ingest_b4_run
   b_ingest_b1_sources --> b_ingest_b4_run
@@ -42,30 +45,30 @@ flowchart LR
 
 | Module | What it does |
 |---|---|
-| [`a_core.a1_config`](#mod-a_core-a1_config) | Load the CSV config files: which countries and which indicators to ingest. |
+| [`a_core.a1_config`](#mod-a_core-a1_config) | Load the CSV config files: the indicator registry, countries, and each source's series. |
 | [`a_core.a2_schema`](#mod-a_core-a2_schema) | The canonical long-format table every source produces, plus period helpers. |
 | [`b_ingest.b1_sources`](#mod-b_ingest-b1_sources) | Data sources. Importing this package registers every source in SOURCES. |
 | [`b_ingest.b1_sources.base`](#mod-b_ingest-b1_sources-base) | The interface every data source implements. |
 | [`b_ingest.b1_sources.oecd`](#mod-b_ingest-b1_sources-oecd) | OECD SDMX REST API (https://sdmx.oecd.org/public/rest). |
 | [`b_ingest.b2_validate`](#mod-b_ingest-b2_validate) | Check a source's fetch() output matches the canonical schema before storing it. |
-| [`b_ingest.b3_store`](#mod-b_ingest-b3_store) | Append-only change log of observations, one Parquet file per indicator. |
+| [`b_ingest.b3_store`](#mod-b_ingest-b3_store) | Append-only change log of observations, one Parquet file per (source, indicator, frequency). |
 | [`b_ingest.b4_run`](#mod-b_ingest-b4_run) | Command line entry point: `macroscan ingest` and `macroscan describe`. |
 
 | Class | What it does |
 |---|---|
 | [`ConfigError`](#cls-ConfigError) | Raised when a config CSV is missing, malformed or inconsistent. |
 | [`Country`](#cls-Country) | A country to ingest, identified by its ISO3 code. |
-| [`IndicatorSpec`](#cls-IndicatorSpec) | One configured indicator: where to fetch it from and how to filter it. |
+| [`SeriesSpec`](#cls-SeriesSpec) | One source's series for an (indicator, frequency): where to fetch it and how to filter it. |
 | [`Source`](#cls-Source) | A data provider. fetch() returns a frame with a2_schema.FETCH_COLUMNS. |
 | [`OECDError`](#cls-OECDError) | Raised for OECD API failures and unexpected responses. |
 | [`Dataflow`](#cls-Dataflow) | Reference to an OECD dataflow: agency, dataflow id and version. |
 | [`Dimension`](#cls-Dimension) | One dimension of a dataflow's key, with its codelist. |
 | [`Structure`](#cls-Structure) | The parts of a dataflow's structure needed to build keys and describe it. |
 | [`OECDClient`](#cls-OECDClient) | requests wrapper with backoff on 429/5xx and a minimum gap between calls. |
-| [`OECDSource`](#cls-OECDSource) | Source for OECD indicators configured as named dimension filters. |
+| [`OECDSource`](#cls-OECDSource) | Source for OECD series configured as named dimension filters plus a frequency. |
 | [`SchemaError`](#cls-SchemaError) | Raised when a fetched frame doesn't match the canonical schema. |
-| [`ChangeSummary`](#cls-ChangeSummary) | What one ingest of an indicator changed. |
-| [`Store`](#cls-Store) | Reads and writes the per-indicator change logs and the manifest. |
+| [`ChangeSummary`](#cls-ChangeSummary) | What one ingest of a series changed. |
+| [`Store`](#cls-Store) | Reads and writes the per-series change logs and the manifest. |
 
 ## Classes
 
@@ -78,18 +81,20 @@ classDiagram
     code: str
     name: str
   }
-  class IndicatorSpec {
-    id: str
-    name: str
+  class SeriesSpec {
     source: str
+    indicator: str
+    frequency: str
     dataflow: str
     filters: dict~str, tuple~str, ...~~
     start: str or None
     end: str or None
+    name: str
+    label(self) : str
   }
   class Source {
     name: str
-    fetch(self, spec: IndicatorSpec, countries: list~str~) : pd.DataFrame
+    fetch(self, spec: SeriesSpec, countries: list~str~) : pd.DataFrame
   }
   class OECDError {
   }
@@ -121,7 +126,7 @@ classDiagram
   }
   class OECDSource {
     structure(self, dataflow: str or Dataflow) : Structure
-    fetch(self, spec: IndicatorSpec, countries: list~str~) : pd.DataFrame
+    fetch(self, spec: SeriesSpec, countries: list~str~) : pd.DataFrame
   }
   Source <|-- OECDSource
   class SchemaError {
@@ -136,23 +141,23 @@ classDiagram
     appended(self) : int
   }
   class Store {
-    path(self, source: str, indicator: str) : Path
-    _find(self, indicator: str, source: str or None) : Path
-    load_log(self, source: str, indicator: str) : pd.DataFrame
-    apply(self, pulled: pd.DataFrame, source: str, indicator: str, requested_countries: list~str~ or None=None, pulled_at: datetime or None=None) : ChangeSummary
-    record_request(self, source: str, indicator: str, url: str or None) : None
-    read_history(self, indicator: str, source: str or None=None, country: str or None=None, period: str or None=None) : pd.DataFrame
-    read_as_of(self, indicator: str, when, source: str or None=None) : pd.DataFrame
-    read_latest(self, indicator: str, source: str or None=None) : pd.DataFrame
-    read_all_latest(self, source: str or None=None) : pd.DataFrame
+    path(self, source: str, indicator: str, frequency: str) : Path
+    _find(self, indicator: str, frequency: str, source: str or None) : Path
+    load_log(self, source: str, indicator: str, frequency: str) : pd.DataFrame
+    apply(self, pulled: pd.DataFrame, source: str, indicator: str, frequency: str, requested_countries: list~str~ or None=None, pulled_at: datetime or None=None) : ChangeSummary
+    record_request(self, source: str, indicator: str, frequency: str, url: str or None) : None
+    read_history(self, indicator: str, frequency: str, source: str or None=None, country: str or None=None, period: str or None=None) : pd.DataFrame
+    read_as_of(self, indicator: str, frequency: str, when, source: str or None=None) : pd.DataFrame
+    read_latest(self, indicator: str, frequency: str, source: str or None=None) : pd.DataFrame
+    read_all_latest(self, frequency: str, source: str or None=None) : pd.DataFrame
     manifest_path(self) : Path
     manifest(self) : dict
     _write_manifest(self, manifest: dict) : None
-    _update_manifest(self, source, indicator, summary: ChangeSummary, pulled_at, path: Path) : None
+    _update_manifest(self, key: str, summary: ChangeSummary, pulled_at, path: Path) : None
   }
   click ConfigError href "#cls-ConfigError"
   click Country href "#cls-Country"
-  click IndicatorSpec href "#cls-IndicatorSpec"
+  click SeriesSpec href "#cls-SeriesSpec"
   click Source href "#cls-Source"
   click OECDError href "#cls-OECDError"
   click Dataflow href "#cls-Dataflow"
@@ -169,76 +174,104 @@ classDiagram
 
 ### <a id="mod-a_core-a1_config"></a>[`a_core.a1_config`](../src/macroscan/a_core/a1_config.py)
 
-Load the CSV config files: which countries and which indicators to ingest.
+Load the CSV config files: the indicator registry, countries, and each source's series.
 
 ```mermaid
 flowchart LR
   subgraph this["a_core.a1_config"]
     n_a_core_a1_config__read_rows["_read_rows"]
-    n_a_core_a1_config_indicator_files["indicator_files"]
-    n_a_core_a1_config_load_all_indicators["load_all_indicators"]
+    n_a_core_a1_config_load_all_series["load_all_series"]
     n_a_core_a1_config_load_countries["load_countries"]
     n_a_core_a1_config_load_indicators["load_indicators"]
+    n_a_core_a1_config_load_series["load_series"]
     n_a_core_a1_config_parse_filters["parse_filters"]
+    n_a_core_a1_config_series_files["series_files"]
+    n_a_core_a1_config_slug["slug"]
   end
   n_a_core_a1_config_ConfigError["a1_config.ConfigError"]:::ext
   n_a_core_a1_config_Country["a1_config.Country"]:::ext
-  n_a_core_a1_config_IndicatorSpec["a1_config.IndicatorSpec"]:::ext
+  n_a_core_a1_config_SeriesSpec["a1_config.SeriesSpec"]:::ext
+  n_b_ingest_b3_store_Store__find["b3_store.Store._find"]:::ext
+  n_b_ingest_b3_store_Store_path["b3_store.Store.path"]:::ext
+  n_b_ingest_b3_store__manifest_key["b3_store._manifest_key"]:::ext
   n_b_ingest_b4_run_ingest["b4_run.ingest"]:::ext
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config__read_rows
-  n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_all_indicators
-  n_a_core_a1_config_indicator_files --> n_a_core_a1_config_load_all_indicators
-  n_a_core_a1_config_load_indicators --> n_a_core_a1_config_load_all_indicators
+  n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_all_series
+  n_a_core_a1_config_load_indicators --> n_a_core_a1_config_load_all_series
+  n_a_core_a1_config_load_series --> n_a_core_a1_config_load_all_series
+  n_a_core_a1_config_series_files --> n_a_core_a1_config_load_all_series
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_countries
   n_a_core_a1_config_Country --> n_a_core_a1_config_load_countries
   n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_countries
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_indicators
-  n_a_core_a1_config_IndicatorSpec --> n_a_core_a1_config_load_indicators
   n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_indicators
-  n_a_core_a1_config_parse_filters --> n_a_core_a1_config_load_indicators
+  n_a_core_a1_config_slug --> n_a_core_a1_config_load_indicators
+  n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_series
+  n_a_core_a1_config_SeriesSpec --> n_a_core_a1_config_load_series
+  n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_series
+  n_a_core_a1_config_parse_filters --> n_a_core_a1_config_load_series
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_parse_filters
-  n_a_core_a1_config_load_all_indicators --> n_b_ingest_b4_run_ingest
+  n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store__find
+  n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store_path
+  n_a_core_a1_config_slug --> n_b_ingest_b3_store__manifest_key
+  n_a_core_a1_config_load_all_series --> n_b_ingest_b4_run_ingest
   n_a_core_a1_config_load_countries --> n_b_ingest_b4_run_ingest
   click n_a_core_a1_config_ConfigError href "#cls-ConfigError"
   click n_a_core_a1_config_Country href "#cls-Country"
-  click n_a_core_a1_config_IndicatorSpec href "#cls-IndicatorSpec"
+  click n_a_core_a1_config_SeriesSpec href "#cls-SeriesSpec"
   click n_a_core_a1_config__read_rows href "#fn-a_core-a1_config-_read_rows"
-  click n_a_core_a1_config_indicator_files href "#fn-a_core-a1_config-indicator_files"
-  click n_a_core_a1_config_load_all_indicators href "#fn-a_core-a1_config-load_all_indicators"
+  click n_a_core_a1_config_load_all_series href "#fn-a_core-a1_config-load_all_series"
   click n_a_core_a1_config_load_countries href "#fn-a_core-a1_config-load_countries"
   click n_a_core_a1_config_load_indicators href "#fn-a_core-a1_config-load_indicators"
+  click n_a_core_a1_config_load_series href "#fn-a_core-a1_config-load_series"
   click n_a_core_a1_config_parse_filters href "#fn-a_core-a1_config-parse_filters"
+  click n_a_core_a1_config_series_files href "#fn-a_core-a1_config-series_files"
+  click n_a_core_a1_config_slug href "#fn-a_core-a1_config-slug"
+  click n_b_ingest_b3_store_Store__find href "#fn-b_ingest-b3_store-Store._find"
+  click n_b_ingest_b3_store_Store_path href "#fn-b_ingest-b3_store-Store.path"
+  click n_b_ingest_b3_store__manifest_key href "#fn-b_ingest-b3_store-_manifest_key"
   click n_b_ingest_b4_run_ingest href "#fn-b_ingest-b4_run-ingest"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-a_core-a1_config-parse_filters"></a>**[`parse_filters(text: str) -> dict[str, tuple[str, ...]]`](../src/macroscan/a_core/a1_config.py#L40)** — Parse 'FREQ=Q;SEX=M+F' into {'FREQ': ('Q',), 'SEX': ('M', 'F')}.
+- <a id="fn-a_core-a1_config-slug"></a>**[`slug(indicator: str) -> str`](../src/macroscan/a_core/a1_config.py#L62)** — Filesystem-safe form of an indicator name: 'Real GDP' -> 'real_gdp'. Not an identifier.
+  - returns: `re.sub('[^a-z0-9]+', '_', indicator.l...`: `str`
+  - calls: *(none)*
+  - called by: [`load_indicators`](#fn-a_core-a1_config-load_indicators), [`b3_store.Store._find`](#fn-b_ingest-b3_store-Store._find), [`b3_store.Store.path`](#fn-b_ingest-b3_store-Store.path), [`b3_store._manifest_key`](#fn-b_ingest-b3_store-_manifest_key)
+- <a id="fn-a_core-a1_config-parse_filters"></a>**[`parse_filters(text: str) -> dict[str, tuple[str, ...]]`](../src/macroscan/a_core/a1_config.py#L67)** — Parse 'FREQ=Q;SEX=M+F' into {'FREQ': ('Q',), 'SEX': ('M', 'F')}.
   - returns: `filters`: `dict[str, tuple[str, ...]]`
   - calls: [`ConfigError`](#cls-ConfigError)
-  - called by: [`load_indicators`](#fn-a_core-a1_config-load_indicators)
-- <a id="fn-a_core-a1_config-_read_rows"></a>**[`_read_rows(path: Path, required: set[str]) -> list[dict[str, str]]`](../src/macroscan/a_core/a1_config.py#L60)** — Read a CSV into stripped dicts, skipping blank and '#'-commented rows.
+  - called by: [`load_series`](#fn-a_core-a1_config-load_series)
+- <a id="fn-a_core-a1_config-_read_rows"></a>**[`_read_rows(path: Path, required: set[str]) -> list[dict[str, str]]`](../src/macroscan/a_core/a1_config.py#L87)** — Read a CSV into stripped dicts, skipping blank and '#'-commented rows.
   - returns: `[r for r in rows if any(r.values()) a...`: `list[dict[str, str]]`
   - calls: [`ConfigError`](#cls-ConfigError)
-  - called by: [`load_countries`](#fn-a_core-a1_config-load_countries), [`load_indicators`](#fn-a_core-a1_config-load_indicators)
-- <a id="fn-a_core-a1_config-load_countries"></a>**[`load_countries(path: Path) -> list[Country]`](../src/macroscan/a_core/a1_config.py#L74)** — Load and validate the countries list (ISO3 codes, no duplicates).
+  - called by: [`load_countries`](#fn-a_core-a1_config-load_countries), [`load_indicators`](#fn-a_core-a1_config-load_indicators), [`load_series`](#fn-a_core-a1_config-load_series)
+- <a id="fn-a_core-a1_config-load_countries"></a>**[`load_countries(path: Path) -> list[Country]`](../src/macroscan/a_core/a1_config.py#L101)** — Load and validate the countries list (ISO3 codes, no duplicates).
   - returns: `countries`: `list[Country]`
   - calls: [`ConfigError`](#cls-ConfigError), [`Country`](#cls-Country), [`_read_rows`](#fn-a_core-a1_config-_read_rows)
   - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-- <a id="fn-a_core-a1_config-load_indicators"></a>**[`load_indicators(path: Path, source: str) -> list[IndicatorSpec]`](../src/macroscan/a_core/a1_config.py#L91)** — Load and validate one source's indicators CSV into IndicatorSpecs.
-  - returns: `specs`: `list[IndicatorSpec]`
-  - calls: [`ConfigError`](#cls-ConfigError), [`IndicatorSpec`](#cls-IndicatorSpec), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`parse_filters`](#fn-a_core-a1_config-parse_filters)
-  - called by: [`load_all_indicators`](#fn-a_core-a1_config-load_all_indicators)
-- <a id="fn-a_core-a1_config-indicator_files"></a>**[`indicator_files(config_dir: Path) -> dict[str, Path]`](../src/macroscan/a_core/a1_config.py#L122)** — Map source name -> its indicators CSV, e.g. {'oecd': config/02_oecd_indicators.csv}.
+- <a id="fn-a_core-a1_config-load_indicators"></a>**[`load_indicators(path: Path) -> dict[str, str]`](../src/macroscan/a_core/a1_config.py#L118)** — Load the indicator registry: indicator name -> description.
+  - returns: `indicators`: `dict[str, str]`
+  - calls: [`ConfigError`](#cls-ConfigError), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`slug`](#fn-a_core-a1_config-slug)
+  - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
+- <a id="fn-a_core-a1_config-load_series"></a>**[`load_series(path: Path, source: str, indicators: dict[str, str]) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L137)** — Load and validate one source's series CSV into SeriesSpecs.
+  - returns: `specs`: `list[SeriesSpec]`
+  - calls: [`ConfigError`](#cls-ConfigError), [`SeriesSpec`](#cls-SeriesSpec), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`parse_filters`](#fn-a_core-a1_config-parse_filters)
+  - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
+- <a id="fn-a_core-a1_config-series_files"></a>**[`series_files(config_dir: Path) -> dict[str, Path]`](../src/macroscan/a_core/a1_config.py#L174)** — Map source name -> its series CSV, e.g. {'oecd': config/02_oecd_indicators.csv}.
   - returns: `files`: `dict[str, Path]`
   - calls: *(none)*
-  - called by: [`load_all_indicators`](#fn-a_core-a1_config-load_all_indicators)
-- <a id="fn-a_core-a1_config-load_all_indicators"></a>**[`load_all_indicators(config_dir: Path=DEFAULT_CONFIG_DIR) -> list[IndicatorSpec]`](../src/macroscan/a_core/a1_config.py#L132)** — Load every *_indicators.csv in config_dir; ids must be unique across sources.
-  - returns: `specs`: `list[IndicatorSpec]`
-  - calls: [`ConfigError`](#cls-ConfigError), [`indicator_files`](#fn-a_core-a1_config-indicator_files), [`load_indicators`](#fn-a_core-a1_config-load_indicators)
+  - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
+- <a id="fn-a_core-a1_config-load_all_series"></a>**[`load_all_series(config_dir: Path=DEFAULT_CONFIG_DIR) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L186)** — Load every source's series CSV; each (source, indicator, frequency) may appear once.
+  - returns: `specs`: `list[SeriesSpec]`
+  - calls: [`ConfigError`](#cls-ConfigError), [`load_indicators`](#fn-a_core-a1_config-load_indicators), [`load_series`](#fn-a_core-a1_config-load_series), [`series_files`](#fn-a_core-a1_config-series_files)
   - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-- <a id="cls-ConfigError"></a>**[class `ConfigError`](../src/macroscan/a_core/a1_config.py#L14)** — Raised when a config CSV is missing, malformed or inconsistent.
-- <a id="cls-Country"></a>**[class `Country`](../src/macroscan/a_core/a1_config.py#L19)** — A country to ingest, identified by its ISO3 code.
-- <a id="cls-IndicatorSpec"></a>**[class `IndicatorSpec`](../src/macroscan/a_core/a1_config.py#L26)** — One configured indicator: where to fetch it from and how to filter it.
+- <a id="cls-ConfigError"></a>**[class `ConfigError`](../src/macroscan/a_core/a1_config.py#L29)** — Raised when a config CSV is missing, malformed or inconsistent.
+- <a id="cls-Country"></a>**[class `Country`](../src/macroscan/a_core/a1_config.py#L34)** — A country to ingest, identified by its ISO3 code.
+- <a id="cls-SeriesSpec"></a>**[class `SeriesSpec`](../src/macroscan/a_core/a1_config.py#L41)** — One source's series for an (indicator, frequency): where to fetch it and how to filter it.
+  - <a id="fn-a_core-a1_config-SeriesSpec.label"></a>**[`label(self) -> str`](../src/macroscan/a_core/a1_config.py#L57)** — 'oecd/Real GDP/Q', for logs and error messages.
+    - returns: `f'{self.source}/{self.indicator}/{sel...`: `str`
+    - calls: *(none)*
 
 ### <a id="mod-a_core-a2_schema"></a>[`a_core.a2_schema`](../src/macroscan/a_core/a2_schema.py)
 
@@ -259,11 +292,11 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-a_core-a2_schema-parse_periods"></a>**[`parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series`](../src/macroscan/a_core/a2_schema.py#L31)** — Parse period strings ('2024', '2024-Q1', '2024Q1', '2024-03') into a Period Series.
+- <a id="fn-a_core-a2_schema-parse_periods"></a>**[`parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series`](../src/macroscan/a_core/a2_schema.py#L32)** — Parse period strings ('2024', '2024-Q1', '2024Q1', '2024-03') into a Period Series.
   - returns: `pd.Series(pd.PeriodIndex(text, freq=P...`: `pd.Series`
   - calls: *(none)*
   - called by: [`oecd.normalize`](#fn-b_ingest-b1_sources-oecd-normalize), [`b3_store._read`](#fn-b_ingest-b3_store-_read)
-- <a id="fn-a_core-a2_schema-to_wide"></a>**[`to_wide(df: pd.DataFrame, columns: str='country') -> pd.DataFrame`](../src/macroscan/a_core/a2_schema.py#L39)** — Pivot a long frame for one indicator into a PeriodIndex x country matrix.
+- <a id="fn-a_core-a2_schema-to_wide"></a>**[`to_wide(df: pd.DataFrame, columns: str='country') -> pd.DataFrame`](../src/macroscan/a_core/a2_schema.py#L40)** — Pivot a long frame for one indicator at one frequency into a PeriodIndex x country matrix.
   - returns: `wide.sort_index()`: `pd.DataFrame`
   - calls: *(none)*
 
@@ -298,7 +331,7 @@ flowchart LR
   - <a id="fn-b_ingest-b1_sources-base-Source.__init__"></a>**[`__init__(self, cache_dir: Path, refresh_structures: bool=False)`](../src/macroscan/b_ingest/b1_sources/base.py#L18)** — Set up the source with a directory for cached metadata.
     - returns: *(none)*
     - calls: *(none)*
-  - <a id="fn-b_ingest-b1_sources-base-Source.fetch"></a>**[`fetch(self, spec: IndicatorSpec, countries: list[str]) -> pd.DataFrame`](../src/macroscan/b_ingest/b1_sources/base.py#L25)** — Fetch one indicator for the given countries as a canonical frame.
+  - <a id="fn-b_ingest-b1_sources-base-Source.fetch"></a>**[`fetch(self, spec: SeriesSpec, countries: list[str]) -> pd.DataFrame`](../src/macroscan/b_ingest/b1_sources/base.py#L25)** — Fetch one series (indicator at a frequency) for the given countries as a canonical frame.
     - returns: `pd.DataFrame`
     - calls: *(none)*
     - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
@@ -385,81 +418,81 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-b_ingest-b1_sources-oecd-_urn_ref"></a>**[`_urn_ref(urn: str) -> tuple[str, str, str, str | None]`](../src/macroscan/b_ingest/b1_sources/oecd.py#L104)** — '...Codelist=OECD:CL_AREA(1.5)' -> ('OECD', 'CL_AREA', '1.5', None).
+- <a id="fn-b_ingest-b1_sources-oecd-_urn_ref"></a>**[`_urn_ref(urn: str) -> tuple[str, str, str, str | None]`](../src/macroscan/b_ingest/b1_sources/oecd.py#L106)** — '...Codelist=OECD:CL_AREA(1.5)' -> ('OECD', 'CL_AREA', '1.5', None).
   - returns: `(m.group(1), m.group(2), m.group(3), ...`: `tuple[str, str, str, str | None]`
   - calls: [`OECDError`](#cls-OECDError)
   - called by: [`parse_structure`](#fn-b_ingest-b1_sources-oecd-parse_structure)
-- <a id="fn-b_ingest-b1_sources-oecd-parse_structure"></a>**[`parse_structure(payload: dict, dataflow: Dataflow) -> Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L112)** — Reduce an SDMX-JSON structure message to dimensions + codelists.
+- <a id="fn-b_ingest-b1_sources-oecd-parse_structure"></a>**[`parse_structure(payload: dict, dataflow: Dataflow) -> Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L114)** — Reduce an SDMX-JSON structure message to dimensions + codelists.
   - returns: `Structure(dataflow.label, flow.get('n...`: `Structure`
   - calls: [`Dimension`](#cls-Dimension), [`OECDError`](#cls-OECDError), [`Structure`](#cls-Structure), [`_urn_ref`](#fn-b_ingest-b1_sources-oecd-_urn_ref)
   - called by: [`OECDSource.structure`](#fn-b_ingest-b1_sources-oecd-OECDSource.structure)
-- <a id="fn-b_ingest-b1_sources-oecd-build_key"></a>**[`build_key(structure: Structure, filters: dict[str, tuple[str, ...]], countries: list[str]) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L149)** — Place named filters into the positional SDMX key; unlisted dims are wildcards.
+- <a id="fn-b_ingest-b1_sources-oecd-build_key"></a>**[`build_key(structure: Structure, filters: dict[str, tuple[str, ...]], countries: list[str]) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L151)** — Place named filters into the positional SDMX key; unlisted dims are wildcards.
   - returns: `'.'.join(parts)`: `str`
   - calls: *(none)*
   - called by: [`OECDSource.fetch`](#fn-b_ingest-b1_sources-oecd-OECDSource.fetch)
-- <a id="fn-b_ingest-b1_sources-oecd-_retry_after"></a>**[`_retry_after(resp: requests.Response) -> float | None`](../src/macroscan/b_ingest/b1_sources/oecd.py#L229)** — Seconds from a Retry-After header, or None if absent or not a number.
+- <a id="fn-b_ingest-b1_sources-oecd-_retry_after"></a>**[`_retry_after(resp: requests.Response) -> float | None`](../src/macroscan/b_ingest/b1_sources/oecd.py#L231)** — Seconds from a Retry-After header, or None if absent or not a number.
   - returns: `float(resp.headers.get('Retry-After',...`: `float | None`
   - calls: *(none)*
   - called by: [`OECDClient.get`](#fn-b_ingest-b1_sources-oecd-OECDClient.get)
-- <a id="fn-b_ingest-b1_sources-oecd-_code"></a>**[`_code(value: str) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L299)** — 'USA: United States' -> 'USA' (labels=both CSV).
+- <a id="fn-b_ingest-b1_sources-oecd-_code"></a>**[`_code(value: str) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L301)** — 'USA: United States' -> 'USA' (labels=both CSV).
   - returns: `value.split(': ', 1)[0] if isinstance...`: `str`
   - calls: *(none)*
   - called by: [`normalize`](#fn-b_ingest-b1_sources-oecd-normalize)
-- <a id="fn-b_ingest-b1_sources-oecd-normalize"></a>**[`normalize(csv_text: str, spec: IndicatorSpec, structure: Structure) -> pd.DataFrame`](../src/macroscan/b_ingest/b1_sources/oecd.py#L304)** — Turn OECD SDMX-CSV (labels=both) into the canonical fetch frame.
+- <a id="fn-b_ingest-b1_sources-oecd-normalize"></a>**[`normalize(csv_text: str, spec: SeriesSpec, structure: Structure) -> pd.DataFrame`](../src/macroscan/b_ingest/b1_sources/oecd.py#L306)** — Turn OECD SDMX-CSV (labels=both) into the canonical fetch frame.
   - returns: `pd.DataFrame({c: pd.Series(dtype='obj...`, `out.sort_values(['country', 'period']...`: `pd.DataFrame`
   - calls: [`a2_schema.parse_periods`](#fn-a_core-a2_schema-parse_periods), [`_check_one_series_per_country`](#fn-b_ingest-b1_sources-oecd-_check_one_series_per_country), [`_code`](#fn-b_ingest-b1_sources-oecd-_code)
   - called by: [`OECDSource.fetch`](#fn-b_ingest-b1_sources-oecd-OECDSource.fetch)
-- <a id="fn-b_ingest-b1_sources-oecd-_unit_mult_label"></a>**[`_unit_mult_label(code: str) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L346)** — Label for UNIT_MULT codes, e.g. '6' -> 'millions'.
+- <a id="fn-b_ingest-b1_sources-oecd-_unit_mult_label"></a>**[`_unit_mult_label(code: str) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L345)** — Label for UNIT_MULT codes, e.g. '6' -> 'millions'.
   - returns: `names.get(code, f'x1e{code}')`: `str`
   - calls: *(none)*
-- <a id="fn-b_ingest-b1_sources-oecd-_check_one_series_per_country"></a>**[`_check_one_series_per_country(raw: pd.DataFrame, spec: IndicatorSpec, dim_ids: list[str]) -> None`](../src/macroscan/b_ingest/b1_sources/oecd.py#L352)** — Filters must narrow the dataflow to a single series per country.
+- <a id="fn-b_ingest-b1_sources-oecd-_check_one_series_per_country"></a>**[`_check_one_series_per_country(raw: pd.DataFrame, spec: SeriesSpec, dim_ids: list[str]) -> None`](../src/macroscan/b_ingest/b1_sources/oecd.py#L351)** — Filters must narrow the dataflow to a single series per country.
   - returns: *(none)*
   - calls: *(none)*
   - called by: [`normalize`](#fn-b_ingest-b1_sources-oecd-normalize)
-- <a id="fn-b_ingest-b1_sources-oecd-describe"></a>**[`describe(structure: Structure, dim: str | None=None, limit: int=25) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L365)** — Human-readable listing of a dataflow's dimensions and their codes.
+- <a id="fn-b_ingest-b1_sources-oecd-describe"></a>**[`describe(structure: Structure, dim: str | None=None, limit: int=25) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L364)** — Human-readable listing of a dataflow's dimensions and their codes.
   - returns: `'\n'.join(lines)`: `str`
   - calls: [`Structure.dimension`](#fn-b_ingest-b1_sources-oecd-Structure.dimension)
   - called by: [`b4_run.main`](#fn-b_ingest-b4_run-main)
-- <a id="cls-OECDError"></a>**[class `OECDError`](../src/macroscan/b_ingest/b1_sources/oecd.py#L34)** — Raised for OECD API failures and unexpected responses.
-- <a id="cls-Dataflow"></a>**[class `Dataflow`](../src/macroscan/b_ingest/b1_sources/oecd.py#L42)** — Reference to an OECD dataflow: agency, dataflow id and version.
-  - <a id="fn-b_ingest-b1_sources-oecd-Dataflow.parse"></a>**[`parse(cls, text: str) -> Dataflow`](../src/macroscan/b_ingest/b1_sources/oecd.py#L49)** — 'OECD.SDD.NAD:DSD_NAMAIN1@DF_QNA[@1.1]' -> Dataflow.
+- <a id="cls-OECDError"></a>**[class `OECDError`](../src/macroscan/b_ingest/b1_sources/oecd.py#L36)** — Raised for OECD API failures and unexpected responses.
+- <a id="cls-Dataflow"></a>**[class `Dataflow`](../src/macroscan/b_ingest/b1_sources/oecd.py#L44)** — Reference to an OECD dataflow: agency, dataflow id and version.
+  - <a id="fn-b_ingest-b1_sources-oecd-Dataflow.parse"></a>**[`parse(cls, text: str) -> Dataflow`](../src/macroscan/b_ingest/b1_sources/oecd.py#L51)** — 'OECD.SDD.NAD:DSD_NAMAIN1@DF_QNA[@1.1]' -> Dataflow.
     - returns: `cls(agency, f'{parts[0]}@{parts[1]}',...`, `cls(agency, rest)`: `Dataflow`
     - calls: *(none)*
     - called by: [`OECDSource.fetch`](#fn-b_ingest-b1_sources-oecd-OECDSource.fetch), [`OECDSource.structure`](#fn-b_ingest-b1_sources-oecd-OECDSource.structure)
-  - <a id="fn-b_ingest-b1_sources-oecd-Dataflow.label"></a>**[`label(self) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L61)** — 'AGENCY:DATAFLOW_ID', the form used in config and cache keys.
+  - <a id="fn-b_ingest-b1_sources-oecd-Dataflow.label"></a>**[`label(self) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L63)** — 'AGENCY:DATAFLOW_ID', the form used in config and cache keys.
     - returns: `f'{self.agency}:{self.id}'`: `str`
     - calls: *(none)*
-- <a id="cls-Dimension"></a>**[class `Dimension`](../src/macroscan/b_ingest/b1_sources/oecd.py#L67)** — One dimension of a dataflow's key, with its codelist.
-- <a id="cls-Structure"></a>**[class `Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L77)** — The parts of a dataflow's structure needed to build keys and describe it.
-  - <a id="fn-b_ingest-b1_sources-oecd-Structure.dimension"></a>**[`dimension(self, dim_id: str) -> Dimension`](../src/macroscan/b_ingest/b1_sources/oecd.py#L83)** — Look up a dimension by id; raises KeyError if absent.
+- <a id="cls-Dimension"></a>**[class `Dimension`](../src/macroscan/b_ingest/b1_sources/oecd.py#L69)** — One dimension of a dataflow's key, with its codelist.
+- <a id="cls-Structure"></a>**[class `Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L79)** — The parts of a dataflow's structure needed to build keys and describe it.
+  - <a id="fn-b_ingest-b1_sources-oecd-Structure.dimension"></a>**[`dimension(self, dim_id: str) -> Dimension`](../src/macroscan/b_ingest/b1_sources/oecd.py#L85)** — Look up a dimension by id; raises KeyError if absent.
     - returns: `d`: `Dimension`
     - calls: *(none)*
     - called by: [`describe`](#fn-b_ingest-b1_sources-oecd-describe)
-  - <a id="fn-b_ingest-b1_sources-oecd-Structure.to_json"></a>**[`to_json(self) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L90)** — Serialize for the on-disk structure cache.
+  - <a id="fn-b_ingest-b1_sources-oecd-Structure.to_json"></a>**[`to_json(self) -> str`](../src/macroscan/b_ingest/b1_sources/oecd.py#L92)** — Serialize for the on-disk structure cache.
     - returns: `json.dumps(asdict(self), indent=1)`: `str`
     - calls: *(none)*
-  - <a id="fn-b_ingest-b1_sources-oecd-Structure.from_json"></a>**[`from_json(cls, text: str) -> Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L95)** — Load a structure previously written by to_json().
+  - <a id="fn-b_ingest-b1_sources-oecd-Structure.from_json"></a>**[`from_json(cls, text: str) -> Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L97)** — Load a structure previously written by to_json().
     - returns: `cls(raw['dataflow'], raw['name'], [Di...`: `Structure`
     - calls: [`Dimension`](#cls-Dimension)
     - called by: [`OECDSource.structure`](#fn-b_ingest-b1_sources-oecd-OECDSource.structure)
-- <a id="cls-OECDClient"></a>**[class `OECDClient`](../src/macroscan/b_ingest/b1_sources/oecd.py#L178)** — requests wrapper with backoff on 429/5xx and a minimum gap between calls.
-  - <a id="fn-b_ingest-b1_sources-oecd-OECDClient.__init__"></a>**[`__init__(self, base_url: str=BASE_URL, timeout: float=90, retries: int=4, backoff: float=5, min_interval: float=1.5, session: requests.Session | None=None)`](../src/macroscan/b_ingest/b1_sources/oecd.py#L181)** — Configure base URL, timeout, retry count, backoff (seconds) and minimum gap between calls.
+- <a id="cls-OECDClient"></a>**[class `OECDClient`](../src/macroscan/b_ingest/b1_sources/oecd.py#L180)** — requests wrapper with backoff on 429/5xx and a minimum gap between calls.
+  - <a id="fn-b_ingest-b1_sources-oecd-OECDClient.__init__"></a>**[`__init__(self, base_url: str=BASE_URL, timeout: float=90, retries: int=4, backoff: float=5, min_interval: float=1.5, session: requests.Session | None=None)`](../src/macroscan/b_ingest/b1_sources/oecd.py#L183)** — Configure base URL, timeout, retry count, backoff (seconds) and minimum gap between calls.
     - returns: *(none)*
     - calls: *(none)*
     - called by: [`OECDSource.__init__`](#fn-b_ingest-b1_sources-oecd-OECDSource.__init__)
-  - <a id="fn-b_ingest-b1_sources-oecd-OECDClient.get"></a>**[`get(self, path: str, accept: str, params: dict | None=None) -> requests.Response`](../src/macroscan/b_ingest/b1_sources/oecd.py#L200)** — GET a path, sleeping between calls and retrying 429/5xx and network errors.
+  - <a id="fn-b_ingest-b1_sources-oecd-OECDClient.get"></a>**[`get(self, path: str, accept: str, params: dict | None=None) -> requests.Response`](../src/macroscan/b_ingest/b1_sources/oecd.py#L202)** — GET a path, sleeping between calls and retrying 429/5xx and network errors.
     - returns: `resp`: `requests.Response`
     - calls: [`OECDError`](#cls-OECDError), [`_retry_after`](#fn-b_ingest-b1_sources-oecd-_retry_after)
-- <a id="cls-OECDSource"></a>**[class `OECDSource`](../src/macroscan/b_ingest/b1_sources/oecd.py#L241)** — Source for OECD indicators configured as named dimension filters.
-  - <a id="fn-b_ingest-b1_sources-oecd-OECDSource.__init__"></a>**[`__init__(self, cache_dir: Path, refresh_structures: bool=False, client: OECDClient | None=None)`](../src/macroscan/b_ingest/b1_sources/oecd.py#L245)** — Create the source; `client` can be injected for tests.
+- <a id="cls-OECDSource"></a>**[class `OECDSource`](../src/macroscan/b_ingest/b1_sources/oecd.py#L243)** — Source for OECD series configured as named dimension filters plus a frequency.
+  - <a id="fn-b_ingest-b1_sources-oecd-OECDSource.__init__"></a>**[`__init__(self, cache_dir: Path, refresh_structures: bool=False, client: OECDClient | None=None)`](../src/macroscan/b_ingest/b1_sources/oecd.py#L247)** — Create the source; `client` can be injected for tests.
     - returns: *(none)*
     - calls: [`OECDClient.__init__`](#fn-b_ingest-b1_sources-oecd-OECDClient.__init__)
     - called by: [`b4_run.main`](#fn-b_ingest-b4_run-main)
-  - <a id="fn-b_ingest-b1_sources-oecd-OECDSource.structure"></a>**[`structure(self, dataflow: str | Dataflow) -> Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L251)** — Return a dataflow's structure, from memory, the disk cache, or the API.
+  - <a id="fn-b_ingest-b1_sources-oecd-OECDSource.structure"></a>**[`structure(self, dataflow: str | Dataflow) -> Structure`](../src/macroscan/b_ingest/b1_sources/oecd.py#L253)** — Return a dataflow's structure, from memory, the disk cache, or the API.
     - returns: `self._structures[flow.label]`, `structure`: `Structure`
     - calls: [`Dataflow.parse`](#fn-b_ingest-b1_sources-oecd-Dataflow.parse), [`OECDError`](#cls-OECDError), [`Structure.from_json`](#fn-b_ingest-b1_sources-oecd-Structure.from_json), [`parse_structure`](#fn-b_ingest-b1_sources-oecd-parse_structure)
     - called by: [`OECDSource.fetch`](#fn-b_ingest-b1_sources-oecd-OECDSource.fetch), [`b4_run.main`](#fn-b_ingest-b4_run-main)
-  - <a id="fn-b_ingest-b1_sources-oecd-OECDSource.fetch"></a>**[`fetch(self, spec: IndicatorSpec, countries: list[str]) -> pd.DataFrame`](../src/macroscan/b_ingest/b1_sources/oecd.py#L274)** — Fetch one indicator for the given countries as a canonical frame.
+  - <a id="fn-b_ingest-b1_sources-oecd-OECDSource.fetch"></a>**[`fetch(self, spec: SeriesSpec, countries: list[str]) -> pd.DataFrame`](../src/macroscan/b_ingest/b1_sources/oecd.py#L276)** — Fetch one series for the given countries as a canonical frame.
     - returns: `normalize('', spec, structure)`, `normalize(resp.text, spec, structure)`: `pd.DataFrame`
     - calls: [`Dataflow.parse`](#fn-b_ingest-b1_sources-oecd-Dataflow.parse), [`OECDError`](#cls-OECDError), [`OECDSource.structure`](#fn-b_ingest-b1_sources-oecd-OECDSource.structure), [`build_key`](#fn-b_ingest-b1_sources-oecd-build_key), [`normalize`](#fn-b_ingest-b1_sources-oecd-normalize)
     - overrides: [`base.Source.fetch`](#fn-b_ingest-b1_sources-base-Source.fetch)
@@ -483,15 +516,15 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-b_ingest-b2_validate-validate_frame"></a>**[`validate_frame(df: pd.DataFrame, indicator: str) -> pd.DataFrame`](../src/macroscan/b_ingest/b2_validate.py#L14)** — Check a fetched frame against the canonical schema; return it with columns in order.
+- <a id="fn-b_ingest-b2_validate-validate_frame"></a>**[`validate_frame(df: pd.DataFrame, spec: SeriesSpec) -> pd.DataFrame`](../src/macroscan/b_ingest/b2_validate.py#L15)** — Check a fetched frame against the canonical schema; return it with columns in order.
   - returns: `df`: `pd.DataFrame`
   - calls: [`SchemaError`](#cls-SchemaError)
   - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-- <a id="cls-SchemaError"></a>**[class `SchemaError`](../src/macroscan/b_ingest/b2_validate.py#L10)** — Raised when a fetched frame doesn't match the canonical schema.
+- <a id="cls-SchemaError"></a>**[class `SchemaError`](../src/macroscan/b_ingest/b2_validate.py#L11)** — Raised when a fetched frame doesn't match the canonical schema.
 
 ### <a id="mod-b_ingest-b3_store"></a>[`b_ingest.b3_store`](../src/macroscan/b_ingest/b3_store.py)
 
-Append-only change log of observations, one Parquet file per indicator.
+Append-only change log of observations, one Parquet file per (source, indicator, frequency).
 
 ```mermaid
 flowchart LR
@@ -509,15 +542,19 @@ flowchart LR
     n_b_ingest_b3_store_Store_read_history["Store.read_history"]
     n_b_ingest_b3_store_Store_read_latest["Store.read_latest"]
     n_b_ingest_b3_store_Store_record_request["Store.record_request"]
+    n_b_ingest_b3_store__current["_current"]
     n_b_ingest_b3_store__empty["_empty"]
     n_b_ingest_b3_store__latest["_latest"]
+    n_b_ingest_b3_store__manifest_key["_manifest_key"]
     n_b_ingest_b3_store__read["_read"]
     n_b_ingest_b3_store__same["_same"]
     n_b_ingest_b3_store__write["_write"]
   end
+  n_a_core_a1_config_slug["a1_config.slug"]:::ext
   n_a_core_a2_schema_parse_periods["a2_schema.parse_periods"]:::ext
   n_b_ingest_b3_store_ChangeSummary["b3_store.ChangeSummary"]:::ext
   n_b_ingest_b4_run_ingest["b4_run.ingest"]:::ext
+  n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store__find
   n_b_ingest_b3_store_Store_path --> n_b_ingest_b3_store_Store__find
   n_b_ingest_b3_store_Store__write_manifest --> n_b_ingest_b3_store_Store__update_manifest
   n_b_ingest_b3_store_Store_manifest --> n_b_ingest_b3_store_Store__update_manifest
@@ -525,28 +562,35 @@ flowchart LR
   n_b_ingest_b3_store_Store__update_manifest --> n_b_ingest_b3_store_Store_apply
   n_b_ingest_b3_store_Store_path --> n_b_ingest_b3_store_Store_apply
   n_b_ingest_b3_store__latest --> n_b_ingest_b3_store_Store_apply
+  n_b_ingest_b3_store__manifest_key --> n_b_ingest_b3_store_Store_apply
   n_b_ingest_b3_store__read --> n_b_ingest_b3_store_Store_apply
   n_b_ingest_b3_store__same --> n_b_ingest_b3_store_Store_apply
   n_b_ingest_b3_store__write --> n_b_ingest_b3_store_Store_apply
   n_b_ingest_b3_store_Store_path --> n_b_ingest_b3_store_Store_load_log
   n_b_ingest_b3_store__read --> n_b_ingest_b3_store_Store_load_log
-  n_b_ingest_b3_store_Store_read_latest --> n_b_ingest_b3_store_Store_read_all_latest
+  n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store_path
+  n_b_ingest_b3_store__current --> n_b_ingest_b3_store_Store_read_all_latest
   n_b_ingest_b3_store__empty --> n_b_ingest_b3_store_Store_read_all_latest
+  n_b_ingest_b3_store__read --> n_b_ingest_b3_store_Store_read_all_latest
   n_b_ingest_b3_store_Store__find --> n_b_ingest_b3_store_Store_read_as_of
-  n_b_ingest_b3_store__latest --> n_b_ingest_b3_store_Store_read_as_of
+  n_b_ingest_b3_store__current --> n_b_ingest_b3_store_Store_read_as_of
   n_b_ingest_b3_store__read --> n_b_ingest_b3_store_Store_read_as_of
   n_b_ingest_b3_store_Store__find --> n_b_ingest_b3_store_Store_read_history
   n_b_ingest_b3_store__read --> n_b_ingest_b3_store_Store_read_history
   n_b_ingest_b3_store_Store__find --> n_b_ingest_b3_store_Store_read_latest
-  n_b_ingest_b3_store__latest --> n_b_ingest_b3_store_Store_read_latest
+  n_b_ingest_b3_store__current --> n_b_ingest_b3_store_Store_read_latest
   n_b_ingest_b3_store__read --> n_b_ingest_b3_store_Store_read_latest
   n_b_ingest_b3_store_Store__write_manifest --> n_b_ingest_b3_store_Store_record_request
   n_b_ingest_b3_store_Store_manifest --> n_b_ingest_b3_store_Store_record_request
+  n_b_ingest_b3_store__manifest_key --> n_b_ingest_b3_store_Store_record_request
+  n_b_ingest_b3_store__latest --> n_b_ingest_b3_store__current
+  n_a_core_a1_config_slug --> n_b_ingest_b3_store__manifest_key
   n_a_core_a2_schema_parse_periods --> n_b_ingest_b3_store__read
   n_b_ingest_b3_store__empty --> n_b_ingest_b3_store__read
   n_b_ingest_b3_store_Store___init__ --> n_b_ingest_b4_run_ingest
   n_b_ingest_b3_store_Store_apply --> n_b_ingest_b4_run_ingest
   n_b_ingest_b3_store_Store_record_request --> n_b_ingest_b4_run_ingest
+  click n_a_core_a1_config_slug href "#fn-a_core-a1_config-slug"
   click n_a_core_a2_schema_parse_periods href "#fn-a_core-a2_schema-parse_periods"
   click n_b_ingest_b3_store_ChangeSummary href "#cls-ChangeSummary"
   click n_b_ingest_b3_store_Store___init__ href "#fn-b_ingest-b3_store-Store.__init__"
@@ -562,8 +606,10 @@ flowchart LR
   click n_b_ingest_b3_store_Store_read_history href "#fn-b_ingest-b3_store-Store.read_history"
   click n_b_ingest_b3_store_Store_read_latest href "#fn-b_ingest-b3_store-Store.read_latest"
   click n_b_ingest_b3_store_Store_record_request href "#fn-b_ingest-b3_store-Store.record_request"
+  click n_b_ingest_b3_store__current href "#fn-b_ingest-b3_store-_current"
   click n_b_ingest_b3_store__empty href "#fn-b_ingest-b3_store-_empty"
   click n_b_ingest_b3_store__latest href "#fn-b_ingest-b3_store-_latest"
+  click n_b_ingest_b3_store__manifest_key href "#fn-b_ingest-b3_store-_manifest_key"
   click n_b_ingest_b3_store__read href "#fn-b_ingest-b3_store-_read"
   click n_b_ingest_b3_store__same href "#fn-b_ingest-b3_store-_same"
   click n_b_ingest_b3_store__write href "#fn-b_ingest-b3_store-_write"
@@ -571,79 +617,86 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-b_ingest-b3_store-_empty"></a>**[`_empty() -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L191)** — An empty frame with the stored columns.
+- <a id="fn-b_ingest-b3_store-_manifest_key"></a>**[`_manifest_key(source: str, indicator: str, frequency: str) -> str`](../src/macroscan/b_ingest/b3_store.py#L199)** — Manifest entry key for a series, e.g. 'oecd/real_gdp/Q'.
+  - returns: `f'{source}/{slug(indicator)}/{frequen...`: `str`
+  - calls: [`a1_config.slug`](#fn-a_core-a1_config-slug)
+  - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`Store.record_request`](#fn-b_ingest-b3_store-Store.record_request)
+- <a id="fn-b_ingest-b3_store-_empty"></a>**[`_empty() -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L204)** — An empty frame with the stored columns.
   - returns: `pd.DataFrame({c: pd.Series(dtype='obj...`: `pd.DataFrame`
   - calls: *(none)*
   - called by: [`Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest), [`_read`](#fn-b_ingest-b3_store-_read)
-- <a id="fn-b_ingest-b3_store-_write"></a>**[`_write(path: Path, df: pd.DataFrame) -> None`](../src/macroscan/b_ingest/b3_store.py#L196)** — Write a change log atomically, storing periods as strings.
+- <a id="fn-b_ingest-b3_store-_write"></a>**[`_write(path: Path, df: pd.DataFrame) -> None`](../src/macroscan/b_ingest/b3_store.py#L209)** — Write a change log atomically, storing periods as strings.
   - returns: *(none)*
   - calls: *(none)*
   - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply)
-- <a id="fn-b_ingest-b3_store-_read"></a>**[`_read(path: Path) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L205)** — Read a change log, restoring the Period dtype (empty frame if missing).
+- <a id="fn-b_ingest-b3_store-_read"></a>**[`_read(path: Path) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L218)** — Read a change log, restoring the Period dtype (empty frame if missing).
   - returns: `_empty()`, `df`: `pd.DataFrame`
   - calls: [`a2_schema.parse_periods`](#fn-a_core-a2_schema-parse_periods), [`_empty`](#fn-b_ingest-b3_store-_empty)
-  - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`Store.load_log`](#fn-b_ingest-b3_store-Store.load_log), [`Store.read_as_of`](#fn-b_ingest-b3_store-Store.read_as_of), [`Store.read_history`](#fn-b_ingest-b3_store-Store.read_history), [`Store.read_latest`](#fn-b_ingest-b3_store-Store.read_latest)
-- <a id="fn-b_ingest-b3_store-_latest"></a>**[`_latest(log_df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L216)** — Most recent stored row per (country, period).
+  - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`Store.load_log`](#fn-b_ingest-b3_store-Store.load_log), [`Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest), [`Store.read_as_of`](#fn-b_ingest-b3_store-Store.read_as_of), [`Store.read_history`](#fn-b_ingest-b3_store-Store.read_history), [`Store.read_latest`](#fn-b_ingest-b3_store-Store.read_latest)
+- <a id="fn-b_ingest-b3_store-_current"></a>**[`_current(log_df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L230)** — Latest value per (country, period) with withdrawn observations dropped.
+  - returns: `latest[latest['value'].notna()].reset...`: `pd.DataFrame`
+  - calls: [`_latest`](#fn-b_ingest-b3_store-_latest)
+  - called by: [`Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest), [`Store.read_as_of`](#fn-b_ingest-b3_store-Store.read_as_of), [`Store.read_latest`](#fn-b_ingest-b3_store-Store.read_latest)
+- <a id="fn-b_ingest-b3_store-_latest"></a>**[`_latest(log_df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L236)** — Most recent stored row per (country, period).
   - returns: `log_df`, `ordered.groupby(KEY, sort=True, obser...`: `pd.DataFrame`
   - calls: *(none)*
-  - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`Store.read_as_of`](#fn-b_ingest-b3_store-Store.read_as_of), [`Store.read_latest`](#fn-b_ingest-b3_store-Store.read_latest)
-- <a id="fn-b_ingest-b3_store-_same"></a>**[`_same(a: pd.Series, b: pd.Series) -> pd.Series`](../src/macroscan/b_ingest/b3_store.py#L224)** — Elementwise equality treating null==null and near-equal floats as the same.
+  - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`_current`](#fn-b_ingest-b3_store-_current)
+- <a id="fn-b_ingest-b3_store-_same"></a>**[`_same(a: pd.Series, b: pd.Series) -> pd.Series`](../src/macroscan/b_ingest/b3_store.py#L244)** — Elementwise equality treating null==null and near-equal floats as the same.
   - returns: `both_null | close`, `both_null | (a.astype(object) == b.as...`: `pd.Series`
   - calls: *(none)*
   - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply)
-- <a id="cls-ChangeSummary"></a>**[class `ChangeSummary`](../src/macroscan/b_ingest/b3_store.py#L27)** — What one ingest of an indicator changed.
-  - <a id="fn-b_ingest-b3_store-ChangeSummary.appended"></a>**[`appended(self) -> int`](../src/macroscan/b_ingest/b3_store.py#L36)** — Total rows appended to the log.
+- <a id="cls-ChangeSummary"></a>**[class `ChangeSummary`](../src/macroscan/b_ingest/b3_store.py#L28)** — What one ingest of a series changed.
+  - <a id="fn-b_ingest-b3_store-ChangeSummary.appended"></a>**[`appended(self) -> int`](../src/macroscan/b_ingest/b3_store.py#L37)** — Total rows appended to the log.
     - returns: `self.new + self.revised + self.withdrawn`: `int`
     - calls: *(none)*
-- <a id="cls-Store"></a>**[class `Store`](../src/macroscan/b_ingest/b3_store.py#L41)** — Reads and writes the per-indicator change logs and the manifest.
-  - <a id="fn-b_ingest-b3_store-Store.__init__"></a>**[`__init__(self, root: Path=DEFAULT_ROOT)`](../src/macroscan/b_ingest/b3_store.py#L43)** — Use `root` (default data/b_ingest) as the storage directory.
+- <a id="cls-Store"></a>**[class `Store`](../src/macroscan/b_ingest/b3_store.py#L42)** — Reads and writes the per-series change logs and the manifest.
+  - <a id="fn-b_ingest-b3_store-Store.__init__"></a>**[`__init__(self, root: Path=DEFAULT_ROOT)`](../src/macroscan/b_ingest/b3_store.py#L44)** — Use `root` (default data/b_ingest) as the storage directory.
     - returns: *(none)*
     - calls: *(none)*
     - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-  - <a id="fn-b_ingest-b3_store-Store.path"></a>**[`path(self, source: str, indicator: str) -> Path`](../src/macroscan/b_ingest/b3_store.py#L49)** — Parquet path for one indicator's change log.
-    - returns: `self.root / source / f'{indicator}.pa...`: `Path`
-    - calls: *(none)*
+  - <a id="fn-b_ingest-b3_store-Store.path"></a>**[`path(self, source: str, indicator: str, frequency: str) -> Path`](../src/macroscan/b_ingest/b3_store.py#L50)** — Parquet path for one series' change log, e.g. oecd/real_gdp_Q.parquet.
+    - returns: `self.root / source / f'{slug(indicato...`: `Path`
+    - calls: [`a1_config.slug`](#fn-a_core-a1_config-slug)
     - called by: [`Store._find`](#fn-b_ingest-b3_store-Store._find), [`Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`Store.load_log`](#fn-b_ingest-b3_store-Store.load_log)
-  - <a id="fn-b_ingest-b3_store-Store._find"></a>**[`_find(self, indicator: str, source: str | None) -> Path`](../src/macroscan/b_ingest/b3_store.py#L53)** — Path for an indicator, searching all sources when `source` is None.
-    - returns: `self.path(source, indicator)`, `matches[0]`: `Path`
-    - calls: [`Store.path`](#fn-b_ingest-b3_store-Store.path)
+  - <a id="fn-b_ingest-b3_store-Store._find"></a>**[`_find(self, indicator: str, frequency: str, source: str | None) -> Path`](../src/macroscan/b_ingest/b3_store.py#L54)** — Path for an (indicator, frequency), searching all sources when `source` is None.
+    - returns: `self.path(source, indicator, frequency)`, `matches[0]`: `Path`
+    - calls: [`a1_config.slug`](#fn-a_core-a1_config-slug), [`Store.path`](#fn-b_ingest-b3_store-Store.path)
     - called by: [`Store.read_as_of`](#fn-b_ingest-b3_store-Store.read_as_of), [`Store.read_history`](#fn-b_ingest-b3_store-Store.read_history), [`Store.read_latest`](#fn-b_ingest-b3_store-Store.read_latest)
-  - <a id="fn-b_ingest-b3_store-Store.load_log"></a>**[`load_log(self, source: str, indicator: str) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L62)** — The raw change log for an indicator (empty frame if none stored).
-    - returns: `_read(self.path(source, indicator))`: `pd.DataFrame`
+  - <a id="fn-b_ingest-b3_store-Store.load_log"></a>**[`load_log(self, source: str, indicator: str, frequency: str) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L66)** — The raw change log for a series (empty frame if none stored).
+    - returns: `_read(self.path(source, indicator, fr...`: `pd.DataFrame`
     - calls: [`Store.path`](#fn-b_ingest-b3_store-Store.path), [`_read`](#fn-b_ingest-b3_store-_read)
-  - <a id="fn-b_ingest-b3_store-Store.apply"></a>**[`apply(self, pulled: pd.DataFrame, source: str, indicator: str, requested_countries: list[str] | None=None, pulled_at: datetime | None=None) -> ChangeSummary`](../src/macroscan/b_ingest/b3_store.py#L68)** — Diff a full pull against the stored log and append what changed.
+  - <a id="fn-b_ingest-b3_store-Store.apply"></a>**[`apply(self, pulled: pd.DataFrame, source: str, indicator: str, frequency: str, requested_countries: list[str] | None=None, pulled_at: datetime | None=None) -> ChangeSummary`](../src/macroscan/b_ingest/b3_store.py#L72)** — Diff a full pull against the stored log and append what changed.
     - returns: `summary`: `ChangeSummary`
-    - calls: [`ChangeSummary`](#cls-ChangeSummary), [`Store._update_manifest`](#fn-b_ingest-b3_store-Store._update_manifest), [`Store.path`](#fn-b_ingest-b3_store-Store.path), [`_latest`](#fn-b_ingest-b3_store-_latest), [`_read`](#fn-b_ingest-b3_store-_read), [`_same`](#fn-b_ingest-b3_store-_same), [`_write`](#fn-b_ingest-b3_store-_write)
+    - calls: [`ChangeSummary`](#cls-ChangeSummary), [`Store._update_manifest`](#fn-b_ingest-b3_store-Store._update_manifest), [`Store.path`](#fn-b_ingest-b3_store-Store.path), [`_latest`](#fn-b_ingest-b3_store-_latest), [`_manifest_key`](#fn-b_ingest-b3_store-_manifest_key), [`_read`](#fn-b_ingest-b3_store-_read), [`_same`](#fn-b_ingest-b3_store-_same), [`_write`](#fn-b_ingest-b3_store-_write)
     - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-  - <a id="fn-b_ingest-b3_store-Store.record_request"></a>**[`record_request(self, source: str, indicator: str, url: str | None) -> None`](../src/macroscan/b_ingest/b3_store.py#L118)** — Remember the request URL used for an indicator's last pull.
+  - <a id="fn-b_ingest-b3_store-Store.record_request"></a>**[`record_request(self, source: str, indicator: str, frequency: str, url: str | None) -> None`](../src/macroscan/b_ingest/b3_store.py#L123)** — Remember the request URL used for a series' last pull.
     - returns: *(none)*
-    - calls: [`Store._write_manifest`](#fn-b_ingest-b3_store-Store._write_manifest), [`Store.manifest`](#fn-b_ingest-b3_store-Store.manifest)
+    - calls: [`Store._write_manifest`](#fn-b_ingest-b3_store-Store._write_manifest), [`Store.manifest`](#fn-b_ingest-b3_store-Store.manifest), [`_manifest_key`](#fn-b_ingest-b3_store-_manifest_key)
     - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-  - <a id="fn-b_ingest-b3_store-Store.read_history"></a>**[`read_history(self, indicator: str, source: str | None=None, country: str | None=None, period: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L126)** — Every stored version of every observation (the revision trail).
+  - <a id="fn-b_ingest-b3_store-Store.read_history"></a>**[`read_history(self, indicator: str, frequency: str, source: str | None=None, country: str | None=None, period: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L131)** — Every stored version of every observation (the revision trail).
     - returns: `df.sort_values([*KEY, 'pulled_at']).r...`: `pd.DataFrame`
     - calls: [`Store._find`](#fn-b_ingest-b3_store-Store._find), [`_read`](#fn-b_ingest-b3_store-_read)
-  - <a id="fn-b_ingest-b3_store-Store.read_as_of"></a>**[`read_as_of(self, indicator: str, when, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L137)** — The data as it looked at `when` (tz-naive is treated as UTC).
-    - returns: `latest[latest['value'].notna()].reset...`: `pd.DataFrame`
-    - calls: [`Store._find`](#fn-b_ingest-b3_store-Store._find), [`_latest`](#fn-b_ingest-b3_store-_latest), [`_read`](#fn-b_ingest-b3_store-_read)
-  - <a id="fn-b_ingest-b3_store-Store.read_latest"></a>**[`read_latest(self, indicator: str, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L146)** — Today's data: the latest value per (country, period), withdrawn rows dropped.
-    - returns: `latest[latest['value'].notna()].reset...`: `pd.DataFrame`
-    - calls: [`Store._find`](#fn-b_ingest-b3_store-Store._find), [`_latest`](#fn-b_ingest-b3_store-_latest), [`_read`](#fn-b_ingest-b3_store-_read)
-    - called by: [`Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest)
-  - <a id="fn-b_ingest-b3_store-Store.read_all_latest"></a>**[`read_all_latest(self, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L151)** — Latest data for every stored indicator. Periods become strings when frequencies mix.
+  - <a id="fn-b_ingest-b3_store-Store.read_as_of"></a>**[`read_as_of(self, indicator: str, frequency: str, when, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L147)** — The data as it looked at `when` (tz-naive is treated as UTC).
+    - returns: `_current(df[df['pulled_at'] <= when])`: `pd.DataFrame`
+    - calls: [`Store._find`](#fn-b_ingest-b3_store-Store._find), [`_current`](#fn-b_ingest-b3_store-_current), [`_read`](#fn-b_ingest-b3_store-_read)
+  - <a id="fn-b_ingest-b3_store-Store.read_latest"></a>**[`read_latest(self, indicator: str, frequency: str, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L155)** — Today's data: the latest value per (country, period), withdrawn rows dropped.
+    - returns: `_current(_read(self._find(indicator, ...`: `pd.DataFrame`
+    - calls: [`Store._find`](#fn-b_ingest-b3_store-Store._find), [`_current`](#fn-b_ingest-b3_store-_current), [`_read`](#fn-b_ingest-b3_store-_read)
+  - <a id="fn-b_ingest-b3_store-Store.read_all_latest"></a>**[`read_all_latest(self, frequency: str, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L159)** — Latest data for every stored indicator at one frequency, so periods share a dtype.
     - returns: `pd.concat(frames, ignore_index=True) ...`: `pd.DataFrame`
-    - calls: [`Store.read_latest`](#fn-b_ingest-b3_store-Store.read_latest), [`_empty`](#fn-b_ingest-b3_store-_empty)
-  - <a id="fn-b_ingest-b3_store-Store.manifest_path"></a>**[`manifest_path(self) -> Path`](../src/macroscan/b_ingest/b3_store.py#L161)** — Location of manifest.json.
+    - calls: [`_current`](#fn-b_ingest-b3_store-_current), [`_empty`](#fn-b_ingest-b3_store-_empty), [`_read`](#fn-b_ingest-b3_store-_read)
+  - <a id="fn-b_ingest-b3_store-Store.manifest_path"></a>**[`manifest_path(self) -> Path`](../src/macroscan/b_ingest/b3_store.py#L169)** — Location of manifest.json.
     - returns: `self.root / 'manifest.json'`: `Path`
     - calls: *(none)*
-  - <a id="fn-b_ingest-b3_store-Store.manifest"></a>**[`manifest(self) -> dict`](../src/macroscan/b_ingest/b3_store.py#L165)** — The manifest as a dict (empty if not written yet).
+  - <a id="fn-b_ingest-b3_store-Store.manifest"></a>**[`manifest(self) -> dict`](../src/macroscan/b_ingest/b3_store.py#L173)** — The manifest as a dict (empty if not written yet).
     - returns: `{}`, `json.loads(self.manifest_path.read_te...`: `dict`
     - calls: *(none)*
     - called by: [`Store._update_manifest`](#fn-b_ingest-b3_store-Store._update_manifest), [`Store.record_request`](#fn-b_ingest-b3_store-Store.record_request)
-  - <a id="fn-b_ingest-b3_store-Store._write_manifest"></a>**[`_write_manifest(self, manifest: dict) -> None`](../src/macroscan/b_ingest/b3_store.py#L171)** — Write the manifest dict to disk.
+  - <a id="fn-b_ingest-b3_store-Store._write_manifest"></a>**[`_write_manifest(self, manifest: dict) -> None`](../src/macroscan/b_ingest/b3_store.py#L179)** — Write the manifest dict to disk.
     - returns: *(none)*
     - calls: *(none)*
     - called by: [`Store._update_manifest`](#fn-b_ingest-b3_store-Store._update_manifest), [`Store.record_request`](#fn-b_ingest-b3_store-Store.record_request)
-  - <a id="fn-b_ingest-b3_store-Store._update_manifest"></a>**[`_update_manifest(self, source, indicator, summary: ChangeSummary, pulled_at, path: Path) -> None`](../src/macroscan/b_ingest/b3_store.py#L176)** — Record pull/change times, the run summary and stored row count.
+  - <a id="fn-b_ingest-b3_store-Store._update_manifest"></a>**[`_update_manifest(self, key: str, summary: ChangeSummary, pulled_at, path: Path) -> None`](../src/macroscan/b_ingest/b3_store.py#L184)** — Record pull/change times, the run summary and stored row count.
     - returns: *(none)*
     - calls: [`Store._write_manifest`](#fn-b_ingest-b3_store-Store._write_manifest), [`Store.manifest`](#fn-b_ingest-b3_store-Store.manifest)
     - called by: [`Store.apply`](#fn-b_ingest-b3_store-Store.apply)
@@ -658,7 +711,7 @@ flowchart LR
     n_b_ingest_b4_run_ingest["ingest"]
     n_b_ingest_b4_run_main["main"]
   end
-  n_a_core_a1_config_load_all_indicators["a1_config.load_all_indicators"]:::ext
+  n_a_core_a1_config_load_all_series["a1_config.load_all_series"]:::ext
   n_a_core_a1_config_load_countries["a1_config.load_countries"]:::ext
   n_b_ingest_b1_sources_base_Source_fetch["base.Source.fetch"]:::ext
   n_b_ingest_b1_sources_oecd_OECDSource___init__["oecd.OECDSource.__init__"]:::ext
@@ -668,7 +721,7 @@ flowchart LR
   n_b_ingest_b3_store_Store___init__["b3_store.Store.__init__"]:::ext
   n_b_ingest_b3_store_Store_apply["b3_store.Store.apply"]:::ext
   n_b_ingest_b3_store_Store_record_request["b3_store.Store.record_request"]:::ext
-  n_a_core_a1_config_load_all_indicators --> n_b_ingest_b4_run_ingest
+  n_a_core_a1_config_load_all_series --> n_b_ingest_b4_run_ingest
   n_a_core_a1_config_load_countries --> n_b_ingest_b4_run_ingest
   n_b_ingest_b1_sources_base_Source_fetch --> n_b_ingest_b4_run_ingest
   n_b_ingest_b2_validate_validate_frame --> n_b_ingest_b4_run_ingest
@@ -679,7 +732,7 @@ flowchart LR
   n_b_ingest_b1_sources_oecd_OECDSource_structure --> n_b_ingest_b4_run_main
   n_b_ingest_b1_sources_oecd_describe --> n_b_ingest_b4_run_main
   n_b_ingest_b4_run_ingest --> n_b_ingest_b4_run_main
-  click n_a_core_a1_config_load_all_indicators href "#fn-a_core-a1_config-load_all_indicators"
+  click n_a_core_a1_config_load_all_series href "#fn-a_core-a1_config-load_all_series"
   click n_a_core_a1_config_load_countries href "#fn-a_core-a1_config-load_countries"
   click n_b_ingest_b1_sources_base_Source_fetch href "#fn-b_ingest-b1_sources-base-Source.fetch"
   click n_b_ingest_b1_sources_oecd_OECDSource___init__ href "#fn-b_ingest-b1_sources-oecd-OECDSource.__init__"
@@ -694,11 +747,11 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-b_ingest-b4_run-ingest"></a>**[`ingest(config_dir: Path=DEFAULT_CONFIG_DIR, data_dir: Path=DEFAULT_ROOT, only: list[str] | None=None, refresh_structures: bool=False) -> int`](../src/macroscan/b_ingest/b4_run.py#L19)** — Fetch every configured indicator and append changes. Returns the number of failures.
+- <a id="fn-b_ingest-b4_run-ingest"></a>**[`ingest(config_dir: Path=DEFAULT_CONFIG_DIR, data_dir: Path=DEFAULT_ROOT, only: list[str] | None=None, refresh_structures: bool=False) -> int`](../src/macroscan/b_ingest/b4_run.py#L19)** — Fetch every configured series and append changes. Returns the number of failures.
   - returns: `failures`: `int`
-  - calls: [`a1_config.load_all_indicators`](#fn-a_core-a1_config-load_all_indicators), [`a1_config.load_countries`](#fn-a_core-a1_config-load_countries), [`base.Source.fetch`](#fn-b_ingest-b1_sources-base-Source.fetch), [`b2_validate.validate_frame`](#fn-b_ingest-b2_validate-validate_frame), [`b3_store.Store.__init__`](#fn-b_ingest-b3_store-Store.__init__), [`b3_store.Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`b3_store.Store.record_request`](#fn-b_ingest-b3_store-Store.record_request)
+  - calls: [`a1_config.load_all_series`](#fn-a_core-a1_config-load_all_series), [`a1_config.load_countries`](#fn-a_core-a1_config-load_countries), [`base.Source.fetch`](#fn-b_ingest-b1_sources-base-Source.fetch), [`b2_validate.validate_frame`](#fn-b_ingest-b2_validate-validate_frame), [`b3_store.Store.__init__`](#fn-b_ingest-b3_store-Store.__init__), [`b3_store.Store.apply`](#fn-b_ingest-b3_store-Store.apply), [`b3_store.Store.record_request`](#fn-b_ingest-b3_store-Store.record_request)
   - called by: [`main`](#fn-b_ingest-b4_run-main)
-- <a id="fn-b_ingest-b4_run-main"></a>**[`main(argv: list[str] | None=None) -> int`](../src/macroscan/b_ingest/b4_run.py#L63)** — Parse arguments and run `ingest` or `describe`; returns the exit code.
+- <a id="fn-b_ingest-b4_run-main"></a>**[`main(argv: list[str] | None=None) -> int`](../src/macroscan/b_ingest/b4_run.py#L69)** — Parse arguments and run `ingest` or `describe`; returns the exit code.
   - returns: `1 if ingest(args.config_dir, args.dat...`, `0`: `int`
   - calls: [`oecd.OECDSource.__init__`](#fn-b_ingest-b1_sources-oecd-OECDSource.__init__), [`oecd.OECDSource.structure`](#fn-b_ingest-b1_sources-oecd-OECDSource.structure), [`oecd.describe`](#fn-b_ingest-b1_sources-oecd-describe), [`ingest`](#fn-b_ingest-b4_run-ingest)
 

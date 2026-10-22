@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from macroscan.a_core.a1_config import IndicatorSpec
+from macroscan.a_core.a1_config import SeriesSpec
 
 
 class Source(ABC):
@@ -22,8 +22,8 @@ class Source(ABC):
         self.last_request_url: str | None = None
 
     @abstractmethod
-    def fetch(self, spec: IndicatorSpec, countries: list[str]) -> pd.DataFrame:
-        """Fetch one indicator for the given countries as a canonical frame."""
+    def fetch(self, spec: SeriesSpec, countries: list[str]) -> pd.DataFrame:
+        """Fetch one series (indicator at a frequency) for the given countries as a canonical frame."""
 
 
 SOURCES: dict[str, type[Source]] = {}

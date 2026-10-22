@@ -1,6 +1,7 @@
 """The canonical long-format table every source produces, plus period helpers.
 
-One row per (indicator, country, period). `period` is a pandas Period column;
+One row per (indicator, frequency, country, period). `indicator` is the
+conceptual indicator name from 00_indicators.csv; `frequency` is a separate dimension. `period` is a pandas Period column;
 there is deliberately no datetime column. Convert with `.dt.to_timestamp()` only
 at the chart boundary.
 """
@@ -33,11 +34,13 @@ def parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series:
     if frequency not in PANDAS_FREQ:
         raise ValueError(f"unsupported frequency {frequency!r}; expected one of {sorted(PANDAS_FREQ)}")
     text = pd.Series(values, dtype="string").str.replace("-Q", "Q", regex=False)
-    return pd.Series(pd.PeriodIndex(text, freq=PANDAS_FREQ[frequency]), index=getattr(values, "index", None))
+    return pd.Series(pd.PeriodIndex(text, freq=PANDAS_FREQ[frequency]), index=values.index if isinstance(values, pd.Series) else None)
 
 
 def to_wide(df: pd.DataFrame, columns: str = "country") -> pd.DataFrame:
-    """Pivot a long frame for one indicator into a PeriodIndex x country matrix."""
+    """Pivot a long frame for one indicator at one frequency into a PeriodIndex x country matrix."""
+    if df["frequency"].nunique() > 1:
+        raise ValueError("to_wide expects one frequency; filter on frequency first")
     if df["indicator"].nunique() > 1 and columns != "indicator":
         raise ValueError("to_wide expects one indicator; filter first or pass columns='indicator'")
     wide = df.pivot_table(index="period", columns=columns, values="value", aggfunc="first")
