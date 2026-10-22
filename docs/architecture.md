@@ -18,6 +18,13 @@ flowchart LR
     b_ingest_b3_store["b3_store"]
     b_ingest_b4_run["b4_run"]
   end
+  subgraph c_transform
+    c_transform_c1_load["c1_load"]
+  end
+  subgraph d_visualization
+    d_visualization_d1_frames["d1_frames"]
+    d_visualization_d2_app["d2_app"]
+  end
   a_core_a2_schema --> a_core_a1_config
   b_ingest_b1_sources_base --> b_ingest_b1_sources
   a_core_a1_config --> b_ingest_b1_sources_base
@@ -33,6 +40,12 @@ flowchart LR
   b_ingest_b1_sources_oecd --> b_ingest_b4_run
   b_ingest_b2_validate --> b_ingest_b4_run
   b_ingest_b3_store --> b_ingest_b4_run
+  a_core_a2_schema --> c_transform_c1_load
+  b_ingest_b3_store --> c_transform_c1_load
+  a_core_a1_config --> d_visualization_d2_app
+  b_ingest_b3_store --> d_visualization_d2_app
+  c_transform_c1_load --> d_visualization_d2_app
+  d_visualization_d1_frames --> d_visualization_d2_app
   click a_core_a1_config href "#mod-a_core-a1_config"
   click a_core_a2_schema href "#mod-a_core-a2_schema"
   click b_ingest_b1_sources href "#mod-b_ingest-b1_sources"
@@ -41,6 +54,9 @@ flowchart LR
   click b_ingest_b2_validate href "#mod-b_ingest-b2_validate"
   click b_ingest_b3_store href "#mod-b_ingest-b3_store"
   click b_ingest_b4_run href "#mod-b_ingest-b4_run"
+  click c_transform_c1_load href "#mod-c_transform-c1_load"
+  click d_visualization_d1_frames href "#mod-d_visualization-d1_frames"
+  click d_visualization_d2_app href "#mod-d_visualization-d2_app"
 ```
 
 | Module | What it does |
@@ -53,6 +69,9 @@ flowchart LR
 | [`b_ingest.b2_validate`](#mod-b_ingest-b2_validate) | Check a source's fetch() output matches the canonical schema before storing it. |
 | [`b_ingest.b3_store`](#mod-b_ingest-b3_store) | Append-only change log of observations, one Parquet file per (source, indicator, frequency). |
 | [`b_ingest.b4_run`](#mod-b_ingest-b4_run) | Command line entry point: `macroscan ingest` and `macroscan describe`. |
+| [`c_transform.c1_load`](#mod-c_transform-c1_load) | Pull the ingested data into the transform stage. |
+| [`d_visualization.d1_frames`](#mod-d_visualization-d1_frames) | Shape the ingested data for the app: a latest-value table and chartable series. |
+| [`d_visualization.d2_app`](#mod-d_visualization-d2_app) | Streamlit app: latest values by indicator and country; click cells to chart them. |
 
 | Class | What it does |
 |---|---|
@@ -195,6 +214,7 @@ flowchart LR
   n_b_ingest_b3_store_Store_path["b3_store.Store.path"]:::ext
   n_b_ingest_b3_store__manifest_key["b3_store._manifest_key"]:::ext
   n_b_ingest_b4_run_ingest["b4_run.ingest"]:::ext
+  n_d_visualization_d2_app__countries["d2_app._countries"]:::ext
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config__read_rows
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_all_series
   n_a_core_a1_config_load_indicators --> n_a_core_a1_config_load_all_series
@@ -216,6 +236,7 @@ flowchart LR
   n_a_core_a1_config_slug --> n_b_ingest_b3_store__manifest_key
   n_a_core_a1_config_load_all_series --> n_b_ingest_b4_run_ingest
   n_a_core_a1_config_load_countries --> n_b_ingest_b4_run_ingest
+  n_a_core_a1_config_load_countries --> n_d_visualization_d2_app__countries
   click n_a_core_a1_config_ConfigError href "#cls-ConfigError"
   click n_a_core_a1_config_Country href "#cls-Country"
   click n_a_core_a1_config_SeriesSpec href "#cls-SeriesSpec"
@@ -231,6 +252,7 @@ flowchart LR
   click n_b_ingest_b3_store_Store_path href "#fn-b_ingest-b3_store-Store.path"
   click n_b_ingest_b3_store__manifest_key href "#fn-b_ingest-b3_store-_manifest_key"
   click n_b_ingest_b4_run_ingest href "#fn-b_ingest-b4_run-ingest"
+  click n_d_visualization_d2_app__countries href "#fn-d_visualization-d2_app-_countries"
   classDef ext stroke-dasharray: 4 3
 ```
 
@@ -249,7 +271,7 @@ flowchart LR
 - <a id="fn-a_core-a1_config-load_countries"></a>**[`load_countries(path: Path) -> list[Country]`](../src/macroscan/a_core/a1_config.py#L101)** — Load and validate the countries list (ISO3 codes, no duplicates).
   - returns: `countries`: `list[Country]`
   - calls: [`ConfigError`](#cls-ConfigError), [`Country`](#cls-Country), [`_read_rows`](#fn-a_core-a1_config-_read_rows)
-  - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
+  - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest), [`d2_app._countries`](#fn-d_visualization-d2_app-_countries)
 - <a id="fn-a_core-a1_config-load_indicators"></a>**[`load_indicators(path: Path) -> dict[str, str]`](../src/macroscan/a_core/a1_config.py#L118)** — Load the indicator registry: indicator name -> description.
   - returns: `indicators`: `dict[str, str]`
   - calls: [`ConfigError`](#cls-ConfigError), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`slug`](#fn-a_core-a1_config-slug)
@@ -554,6 +576,7 @@ flowchart LR
   n_a_core_a2_schema_parse_periods["a2_schema.parse_periods"]:::ext
   n_b_ingest_b3_store_ChangeSummary["b3_store.ChangeSummary"]:::ext
   n_b_ingest_b4_run_ingest["b4_run.ingest"]:::ext
+  n_c_transform_c1_load_load_ingested["c1_load.load_ingested"]:::ext
   n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store__find
   n_b_ingest_b3_store_Store_path --> n_b_ingest_b3_store_Store__find
   n_b_ingest_b3_store_Store__write_manifest --> n_b_ingest_b3_store_Store__update_manifest
@@ -590,6 +613,8 @@ flowchart LR
   n_b_ingest_b3_store_Store___init__ --> n_b_ingest_b4_run_ingest
   n_b_ingest_b3_store_Store_apply --> n_b_ingest_b4_run_ingest
   n_b_ingest_b3_store_Store_record_request --> n_b_ingest_b4_run_ingest
+  n_b_ingest_b3_store_Store___init__ --> n_c_transform_c1_load_load_ingested
+  n_b_ingest_b3_store_Store_read_all_latest --> n_c_transform_c1_load_load_ingested
   click n_a_core_a1_config_slug href "#fn-a_core-a1_config-slug"
   click n_a_core_a2_schema_parse_periods href "#fn-a_core-a2_schema-parse_periods"
   click n_b_ingest_b3_store_ChangeSummary href "#cls-ChangeSummary"
@@ -614,6 +639,7 @@ flowchart LR
   click n_b_ingest_b3_store__same href "#fn-b_ingest-b3_store-_same"
   click n_b_ingest_b3_store__write href "#fn-b_ingest-b3_store-_write"
   click n_b_ingest_b4_run_ingest href "#fn-b_ingest-b4_run-ingest"
+  click n_c_transform_c1_load_load_ingested href "#fn-c_transform-c1_load-load_ingested"
   classDef ext stroke-dasharray: 4 3
 ```
 
@@ -653,7 +679,7 @@ flowchart LR
   - <a id="fn-b_ingest-b3_store-Store.__init__"></a>**[`__init__(self, root: Path=DEFAULT_ROOT)`](../src/macroscan/b_ingest/b3_store.py#L44)** — Use `root` (default data/b_ingest) as the storage directory.
     - returns: *(none)*
     - calls: *(none)*
-    - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
+    - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest), [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested)
   - <a id="fn-b_ingest-b3_store-Store.path"></a>**[`path(self, source: str, indicator: str, frequency: str) -> Path`](../src/macroscan/b_ingest/b3_store.py#L50)** — Parquet path for one series' change log, e.g. oecd/real_gdp_Q.parquet.
     - returns: `self.root / source / f'{slug(indicato...`: `Path`
     - calls: [`a1_config.slug`](#fn-a_core-a1_config-slug)
@@ -685,6 +711,7 @@ flowchart LR
   - <a id="fn-b_ingest-b3_store-Store.read_all_latest"></a>**[`read_all_latest(self, frequency: str, source: str | None=None) -> pd.DataFrame`](../src/macroscan/b_ingest/b3_store.py#L159)** — Latest data for every stored indicator at one frequency, so periods share a dtype.
     - returns: `pd.concat(frames, ignore_index=True) ...`: `pd.DataFrame`
     - calls: [`_current`](#fn-b_ingest-b3_store-_current), [`_empty`](#fn-b_ingest-b3_store-_empty), [`_read`](#fn-b_ingest-b3_store-_read)
+    - called by: [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested)
   - <a id="fn-b_ingest-b3_store-Store.manifest_path"></a>**[`manifest_path(self) -> Path`](../src/macroscan/b_ingest/b3_store.py#L169)** — Location of manifest.json.
     - returns: `self.root / 'manifest.json'`: `Path`
     - calls: *(none)*
@@ -754,4 +781,128 @@ flowchart LR
 - <a id="fn-b_ingest-b4_run-main"></a>**[`main(argv: list[str] | None=None) -> int`](../src/macroscan/b_ingest/b4_run.py#L69)** — Parse arguments and run `ingest` or `describe`; returns the exit code.
   - returns: `1 if ingest(args.config_dir, args.dat...`, `0`: `int`
   - calls: [`oecd.OECDSource.__init__`](#fn-b_ingest-b1_sources-oecd-OECDSource.__init__), [`oecd.OECDSource.structure`](#fn-b_ingest-b1_sources-oecd-OECDSource.structure), [`oecd.describe`](#fn-b_ingest-b1_sources-oecd-describe), [`ingest`](#fn-b_ingest-b4_run-ingest)
+
+### <a id="mod-c_transform-c1_load"></a>[`c_transform.c1_load`](../src/macroscan/c_transform/c1_load.py)
+
+Pull the ingested data into the transform stage.
+
+```mermaid
+flowchart LR
+  subgraph this["c_transform.c1_load"]
+    n_c_transform_c1_load_load_ingested["load_ingested"]
+  end
+  n_b_ingest_b3_store_Store___init__["b3_store.Store.__init__"]:::ext
+  n_b_ingest_b3_store_Store_read_all_latest["b3_store.Store.read_all_latest"]:::ext
+  n_d_visualization_d2_app__data["d2_app._data"]:::ext
+  n_b_ingest_b3_store_Store___init__ --> n_c_transform_c1_load_load_ingested
+  n_b_ingest_b3_store_Store_read_all_latest --> n_c_transform_c1_load_load_ingested
+  n_c_transform_c1_load_load_ingested --> n_d_visualization_d2_app__data
+  click n_b_ingest_b3_store_Store___init__ href "#fn-b_ingest-b3_store-Store.__init__"
+  click n_b_ingest_b3_store_Store_read_all_latest href "#fn-b_ingest-b3_store-Store.read_all_latest"
+  click n_c_transform_c1_load_load_ingested href "#fn-c_transform-c1_load-load_ingested"
+  click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
+  classDef ext stroke-dasharray: 4 3
+```
+
+- <a id="fn-c_transform-c1_load-load_ingested"></a>**[`load_ingested(data_dir: Path=DEFAULT_ROOT, frequencies: list[str] | None=None) -> dict[str, pd.DataFrame]`](../src/macroscan/c_transform/c1_load.py#L17)** — Latest ingested data as {frequency: long frame}, skipping frequencies with nothing stored.
+  - returns: `{f: df for f, df in frames.items() if...`: `dict[str, pd.DataFrame]`
+  - calls: [`b3_store.Store.__init__`](#fn-b_ingest-b3_store-Store.__init__), [`b3_store.Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest)
+  - called by: [`d2_app._data`](#fn-d_visualization-d2_app-_data)
+
+### <a id="mod-d_visualization-d1_frames"></a>[`d_visualization.d1_frames`](../src/macroscan/d_visualization/d1_frames.py)
+
+Shape the ingested data for the app: a latest-value table and chartable series.
+
+```mermaid
+flowchart LR
+  subgraph this["d_visualization.d1_frames"]
+    n_d_visualization_d1_frames__labelled["_labelled"]
+    n_d_visualization_d1_frames_chart_series["chart_series"]
+    n_d_visualization_d1_frames_latest_table["latest_table"]
+    n_d_visualization_d1_frames_row_label["row_label"]
+    n_d_visualization_d1_frames_series_label["series_label"]
+  end
+  n_d_visualization_d2_app_main["d2_app.main"]:::ext
+  n_d_visualization_d1_frames_row_label --> n_d_visualization_d1_frames__labelled
+  n_d_visualization_d1_frames__labelled --> n_d_visualization_d1_frames_chart_series
+  n_d_visualization_d1_frames_series_label --> n_d_visualization_d1_frames_chart_series
+  n_d_visualization_d1_frames__labelled --> n_d_visualization_d1_frames_latest_table
+  n_d_visualization_d1_frames_chart_series --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_latest_table --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_series_label --> n_d_visualization_d2_app_main
+  click n_d_visualization_d1_frames__labelled href "#fn-d_visualization-d1_frames-_labelled"
+  click n_d_visualization_d1_frames_chart_series href "#fn-d_visualization-d1_frames-chart_series"
+  click n_d_visualization_d1_frames_latest_table href "#fn-d_visualization-d1_frames-latest_table"
+  click n_d_visualization_d1_frames_row_label href "#fn-d_visualization-d1_frames-row_label"
+  click n_d_visualization_d1_frames_series_label href "#fn-d_visualization-d1_frames-series_label"
+  click n_d_visualization_d2_app_main href "#fn-d_visualization-d2_app-main"
+  classDef ext stroke-dasharray: 4 3
+```
+
+- <a id="fn-d_visualization-d1_frames-row_label"></a>**[`row_label(indicator: str, frequency: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L12)** — Table row for an (indicator, frequency): 'Real GDP (Q)'.
+  - returns: `f'{indicator} ({frequency})'`: `str`
+  - calls: *(none)*
+  - called by: [`_labelled`](#fn-d_visualization-d1_frames-_labelled)
+- <a id="fn-d_visualization-d1_frames-series_label"></a>**[`series_label(row: str, country: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L17)** — Chart line name for one table cell: 'USA · Real GDP (Q)'.
+  - returns: `f'{country} · {row}'`: `str`
+  - calls: *(none)*
+  - called by: [`chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d2_app.main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d1_frames-latest_table"></a>**[`latest_table(data: dict[str, pd.DataFrame], countries: list[str]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L22)** — Last value per indicator (rows) and country (columns, in `countries` order).
+  - returns: `pd.DataFrame(columns=countries, dtype...`, `wide.sort_index()`: `pd.DataFrame`
+  - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled)
+  - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d1_frames-chart_series"></a>**[`chart_series(data: dict[str, pd.DataFrame], picks: list[tuple[str, str]]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L33)** — One column per (row label, country) pick, indexed by timestamp; frequencies are outer-joined.
+  - returns: `chart`: `pd.DataFrame`
+  - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled), [`series_label`](#fn-d_visualization-d1_frames-series_label)
+  - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d1_frames-_labelled"></a>**[`_labelled(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L51)** — A long frame with its table row label added.
+  - returns: `df.assign(row=[row_label(i, f) for i,...`: `pd.DataFrame`
+  - calls: [`row_label`](#fn-d_visualization-d1_frames-row_label)
+  - called by: [`chart_series`](#fn-d_visualization-d1_frames-chart_series), [`latest_table`](#fn-d_visualization-d1_frames-latest_table)
+
+### <a id="mod-d_visualization-d2_app"></a>[`d_visualization.d2_app`](../src/macroscan/d_visualization/d2_app.py)
+
+Streamlit app: latest values by indicator and country; click cells to chart them.
+
+```mermaid
+flowchart LR
+  subgraph this["d_visualization.d2_app"]
+    n_d_visualization_d2_app__countries["_countries"]
+    n_d_visualization_d2_app__data["_data"]
+    n_d_visualization_d2_app_main["main"]
+  end
+  n_a_core_a1_config_load_countries["a1_config.load_countries"]:::ext
+  n_c_transform_c1_load_load_ingested["c1_load.load_ingested"]:::ext
+  n_d_visualization_d1_frames_chart_series["d1_frames.chart_series"]:::ext
+  n_d_visualization_d1_frames_latest_table["d1_frames.latest_table"]:::ext
+  n_d_visualization_d1_frames_series_label["d1_frames.series_label"]:::ext
+  n_a_core_a1_config_load_countries --> n_d_visualization_d2_app__countries
+  n_c_transform_c1_load_load_ingested --> n_d_visualization_d2_app__data
+  n_d_visualization_d1_frames_chart_series --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_latest_table --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_series_label --> n_d_visualization_d2_app_main
+  n_d_visualization_d2_app__countries --> n_d_visualization_d2_app_main
+  n_d_visualization_d2_app__data --> n_d_visualization_d2_app_main
+  click n_a_core_a1_config_load_countries href "#fn-a_core-a1_config-load_countries"
+  click n_c_transform_c1_load_load_ingested href "#fn-c_transform-c1_load-load_ingested"
+  click n_d_visualization_d1_frames_chart_series href "#fn-d_visualization-d1_frames-chart_series"
+  click n_d_visualization_d1_frames_latest_table href "#fn-d_visualization-d1_frames-latest_table"
+  click n_d_visualization_d1_frames_series_label href "#fn-d_visualization-d1_frames-series_label"
+  click n_d_visualization_d2_app__countries href "#fn-d_visualization-d2_app-_countries"
+  click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
+  click n_d_visualization_d2_app_main href "#fn-d_visualization-d2_app-main"
+  classDef ext stroke-dasharray: 4 3
+```
+
+- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L23)** — Ingested data, read once per session.
+  - returns: `load_ingested(DEFAULT_ROOT)`: `dict[str, pd.DataFrame]`
+  - calls: [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested)
+  - called by: [`main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L29)** — Country codes in config order.
+  - returns: `[c.code for c in load_countries(DEFAU...`: `list[str]`
+  - calls: [`a1_config.load_countries`](#fn-a_core-a1_config-load_countries)
+  - called by: [`main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L34)** — Render the table and the chart of picked cells.
+  - returns: *(none)*
+  - calls: [`d1_frames.chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d1_frames.latest_table`](#fn-d_visualization-d1_frames-latest_table), [`d1_frames.series_label`](#fn-d_visualization-d1_frames-series_label), [`_countries`](#fn-d_visualization-d2_app-_countries), [`_data`](#fn-d_visualization-d2_app-_data)
 
