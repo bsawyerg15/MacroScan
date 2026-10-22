@@ -1,0 +1,6 @@
+#!/bin/sh
+# Regenerate docs/architecture.md when the source or the generator is part of the commit.
+if git diff --cached --name-only | grep -qE '^(src/macroscan/|scripts/gen_docs\.py)'; then
+    python3 scripts/gen_docs.py > /dev/null || { echo "pre-commit: gen_docs.py failed" >&2; exit 1; }
+    git add docs/architecture.md
+fi
