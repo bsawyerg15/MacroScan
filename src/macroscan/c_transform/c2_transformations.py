@@ -14,7 +14,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-from macroscan.a_core.a2_schema import PERIODS_PER_YEAR, PeriodInterval, to_wide
+from macroscan.a_core.a2_schema import PANDAS_FREQ, PERIODS_PER_YEAR, PeriodInterval, to_wide
 
 KEYS = ["country", "period"]
 
@@ -61,6 +61,20 @@ def ma_change_pct_yoy(df: pd.DataFrame, front: PeriodInterval, back: PeriodInter
     )
 
 
+def upsample_loglinear(df: pd.DataFrame, frequency: str) -> pd.DataFrame:
+    """An annual series at `frequency`: each year's value at its last period, periods between interpolated
+    geometrically (linearly in logs) per country; nothing before the first year's end or after the last's."""
+    wide = to_wide(df)
+    wide.index = wide.index.asfreq(PANDAS_FREQ[frequency], how="end").rename("period")
+    full = pd.period_range(wide.index.min(), wide.index.max(), freq=PANDAS_FREQ[frequency], name="period")
+    anchors = wide.reindex(full)
+    # Published year-end values are kept exactly; only the periods between are computed.
+    filled = anchors.fillna(np.exp(np.log(anchors).interpolate(limit_area="inside")))
+    values = filled.stack().dropna().rename("value").reset_index()
+    meta = df.drop(columns=["period", "frequency", "value"]).drop_duplicates("country")
+    return values.merge(meta, on="country").assign(frequency=frequency)[df.columns]
+
+
 def add(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
     """a + b per (country, period)."""
     return _combine(a, b, lambda x, y: x + y)
@@ -71,8 +85,8 @@ def sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
     return _combine(a, b, lambda x, y: x - y)
 
 
-def ratio_pct(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
-    """a as a % (decimal) of b per (country, period)."""
+def div(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
+    """a / b per (country, period); a % (as a decimal) when a is a part of b."""
     return _combine(a, b, lambda x, y: x / y)
 
 
@@ -86,4 +100,4 @@ def _combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Serie
     return out.dropna(subset=["value"]).reset_index(drop=True)
 
 
-__all__ = ["yoy_pct", "ma", "ma_change_pct_yoy", "add", "sub", "ratio_pct"]
+__all__ = ["yoy_pct", "ma", "ma_change_pct_yoy", "upsample_loglinear", "add", "sub", "div"]

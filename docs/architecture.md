@@ -47,7 +47,9 @@ flowchart LR
   b_ingest_b2_validate --> b_ingest_b4_run
   b_ingest_b3_store --> b_ingest_b4_run
   a_core_a2_schema --> c_transform_c1_load
+  a_core_a3_indicators --> c_transform_c1_load
   b_ingest_b3_store --> c_transform_c1_load
+  c_transform_c2_transformations --> c_transform_c1_load
   a_core_a2_schema --> c_transform_c2_transformations
   a_core_a2_schema --> c_transform_c3_derived
   a_core_a3_indicators --> c_transform_c3_derived
@@ -362,12 +364,14 @@ flowchart LR
   n_b_ingest_b3_store__read["b3_store._read"]:::ext
   n_c_transform_c2_transformations_ma["c2_transformations.ma"]:::ext
   n_c_transform_c2_transformations_ma_change_pct_yoy["c2_transformations.ma_change_pct_yoy"]:::ext
+  n_c_transform_c2_transformations_upsample_loglinear["c2_transformations.upsample_loglinear"]:::ext
   n_c_transform_c3_derived_real_growth_ma_change["c3_derived.real_growth_ma_change"]:::ext
   n_a_core_a2_schema_parse_periods --> n_b_ingest_b1_sources_oecd_normalize
   n_a_core_a2_schema_parse_periods --> n_b_ingest_b3_store__read
   n_a_core_a2_schema_PeriodInterval_periods_at --> n_c_transform_c2_transformations_ma
   n_a_core_a2_schema_to_wide --> n_c_transform_c2_transformations_ma
   n_a_core_a2_schema_PeriodInterval_periods_at --> n_c_transform_c2_transformations_ma_change_pct_yoy
+  n_a_core_a2_schema_to_wide --> n_c_transform_c2_transformations_upsample_loglinear
   n_a_core_a2_schema_PeriodInterval_months --> n_c_transform_c3_derived_real_growth_ma_change
   click n_a_core_a2_schema_PeriodInterval_months href "#fn-a_core-a2_schema-PeriodInterval.months"
   click n_a_core_a2_schema_PeriodInterval_periods_at href "#fn-a_core-a2_schema-PeriodInterval.periods_at"
@@ -377,6 +381,7 @@ flowchart LR
   click n_b_ingest_b3_store__read href "#fn-b_ingest-b3_store-_read"
   click n_c_transform_c2_transformations_ma href "#fn-c_transform-c2_transformations-ma"
   click n_c_transform_c2_transformations_ma_change_pct_yoy href "#fn-c_transform-c2_transformations-ma_change_pct_yoy"
+  click n_c_transform_c2_transformations_upsample_loglinear href "#fn-c_transform-c2_transformations-upsample_loglinear"
   click n_c_transform_c3_derived_real_growth_ma_change href "#fn-c_transform-c3_derived-real_growth_ma_change"
   classDef ext stroke-dasharray: 4 3
 ```
@@ -388,7 +393,7 @@ flowchart LR
 - <a id="fn-a_core-a2_schema-to_wide"></a>**[`to_wide(df: pd.DataFrame, columns: str='country') -> pd.DataFrame`](../src/macroscan/a_core/a2_schema.py#L75)** — Pivot a long frame for one indicator at one frequency into a PeriodIndex x country matrix.
   - returns: `wide.sort_index()`: `pd.DataFrame`
   - calls: *(none)*
-  - called by: [`c2_transformations.ma`](#fn-c_transform-c2_transformations-ma)
+  - called by: [`c2_transformations.ma`](#fn-c_transform-c2_transformations-ma), [`c2_transformations.upsample_loglinear`](#fn-c_transform-c2_transformations-upsample_loglinear)
 - <a id="cls-PeriodInterval"></a>**[class `PeriodInterval`](../src/macroscan/a_core/a2_schema.py#L39)** — A span of time, e.g. PeriodInterval.months(12); `periods_at` counts it at one of our frequencies.
   - <a id="fn-a_core-a2_schema-PeriodInterval.__post_init__"></a>**[`__post_init__(self) -> None`](../src/macroscan/a_core/a2_schema.py#L44)** — *(no docstring)*
     - returns: *(none)*
@@ -927,33 +932,43 @@ flowchart LR
     n_c_transform_c1_load_is_percent_unit["is_percent_unit"]
     n_c_transform_c1_load_load_ingested["load_ingested"]
     n_c_transform_c1_load_to_decimal_percents["to_decimal_percents"]
+    n_c_transform_c1_load_upsample["upsample"]
   end
   n_b_ingest_b3_store_Store___init__["b3_store.Store.__init__"]:::ext
   n_b_ingest_b3_store_Store_read_all_latest["b3_store.Store.read_all_latest"]:::ext
+  n_c_transform_c2_transformations_upsample_loglinear["c2_transformations.upsample_loglinear"]:::ext
   n_d_visualization_d2_app__data["d2_app._data"]:::ext
   n_b_ingest_b3_store_Store___init__ --> n_c_transform_c1_load_load_ingested
   n_b_ingest_b3_store_Store_read_all_latest --> n_c_transform_c1_load_load_ingested
   n_c_transform_c1_load_to_decimal_percents --> n_c_transform_c1_load_load_ingested
+  n_c_transform_c1_load_upsample --> n_c_transform_c1_load_load_ingested
   n_c_transform_c1_load_is_percent_unit --> n_c_transform_c1_load_to_decimal_percents
+  n_c_transform_c2_transformations_upsample_loglinear --> n_c_transform_c1_load_upsample
   n_c_transform_c1_load_load_ingested --> n_d_visualization_d2_app__data
   click n_b_ingest_b3_store_Store___init__ href "#fn-b_ingest-b3_store-Store.__init__"
   click n_b_ingest_b3_store_Store_read_all_latest href "#fn-b_ingest-b3_store-Store.read_all_latest"
   click n_c_transform_c1_load_is_percent_unit href "#fn-c_transform-c1_load-is_percent_unit"
   click n_c_transform_c1_load_load_ingested href "#fn-c_transform-c1_load-load_ingested"
   click n_c_transform_c1_load_to_decimal_percents href "#fn-c_transform-c1_load-to_decimal_percents"
+  click n_c_transform_c1_load_upsample href "#fn-c_transform-c1_load-upsample"
+  click n_c_transform_c2_transformations_upsample_loglinear href "#fn-c_transform-c2_transformations-upsample_loglinear"
   click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-c_transform-c1_load-load_ingested"></a>**[`load_ingested(data_dir: Path=DEFAULT_ROOT, frequencies: list[str] | None=None) -> dict[str, pd.DataFrame]`](../src/macroscan/c_transform/c1_load.py#L20)** — Latest ingested data as {frequency: long frame}, skipping frequencies with nothing stored.
-  - returns: `{f: to_decimal_percents(df) for f, df...`: `dict[str, pd.DataFrame]`
-  - calls: [`b3_store.Store.__init__`](#fn-b_ingest-b3_store-Store.__init__), [`b3_store.Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest), [`to_decimal_percents`](#fn-c_transform-c1_load-to_decimal_percents)
+- <a id="fn-c_transform-c1_load-load_ingested"></a>**[`load_ingested(data_dir: Path=DEFAULT_ROOT, frequencies: list[str] | None=None) -> dict[str, pd.DataFrame]`](../src/macroscan/c_transform/c1_load.py#L27)** — Latest ingested data as {frequency: long frame}, skipping frequencies with nothing stored.
+  - returns: `{f: df for f, df in frames.items() if...`: `dict[str, pd.DataFrame]`
+  - calls: [`b3_store.Store.__init__`](#fn-b_ingest-b3_store-Store.__init__), [`b3_store.Store.read_all_latest`](#fn-b_ingest-b3_store-Store.read_all_latest), [`to_decimal_percents`](#fn-c_transform-c1_load-to_decimal_percents), [`upsample`](#fn-c_transform-c1_load-upsample)
   - called by: [`d2_app._data`](#fn-d_visualization-d2_app-_data)
-- <a id="fn-c_transform-c1_load-is_percent_unit"></a>**[`is_percent_unit(unit: pd.Series) -> pd.Series`](../src/macroscan/c_transform/c1_load.py#L27)** — Whether each unit is a source percent code: OECD's PA (% per annum) or PT_* (% of something).
+- <a id="fn-c_transform-c1_load-upsample"></a>**[`upsample(frames: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]`](../src/macroscan/c_transform/c1_load.py#L38)** — `frames` plus each UPSAMPLED indicator's annual rows at its target frequency.
+  - returns: `out`: `dict[str, pd.DataFrame]`
+  - calls: [`c2_transformations.upsample_loglinear`](#fn-c_transform-c2_transformations-upsample_loglinear)
+  - called by: [`load_ingested`](#fn-c_transform-c1_load-load_ingested)
+- <a id="fn-c_transform-c1_load-is_percent_unit"></a>**[`is_percent_unit(unit: pd.Series) -> pd.Series`](../src/macroscan/c_transform/c1_load.py#L52)** — Whether each unit is a source percent code: OECD's PA (% per annum) or PT_* (% of something).
   - returns: `(unit == 'PA') | unit.str.startswith(...`: `pd.Series`
   - calls: *(none)*
   - called by: [`to_decimal_percents`](#fn-c_transform-c1_load-to_decimal_percents)
-- <a id="fn-c_transform-c1_load-to_decimal_percents"></a>**[`to_decimal_percents(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c1_load.py#L32)** — `df` with percent values divided by 100 and their unit set to '%'.
+- <a id="fn-c_transform-c1_load-to_decimal_percents"></a>**[`to_decimal_percents(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c1_load.py#L57)** — `df` with percent values divided by 100 and their unit set to '%'.
   - returns: `df.assign(value=df['value'].where(~pc...`: `pd.DataFrame`
   - calls: [`is_percent_unit`](#fn-c_transform-c1_load-is_percent_unit)
   - called by: [`load_ingested`](#fn-c_transform-c1_load-load_ingested)
@@ -967,52 +982,76 @@ flowchart LR
   subgraph this["c_transform.c2_transformations"]
     n_c_transform_c2_transformations__combine["_combine"]
     n_c_transform_c2_transformations_add["add"]
+    n_c_transform_c2_transformations_div["div"]
     n_c_transform_c2_transformations_ma["ma"]
     n_c_transform_c2_transformations_ma_change_pct_yoy["ma_change_pct_yoy"]
-    n_c_transform_c2_transformations_ratio_pct["ratio_pct"]
     n_c_transform_c2_transformations_sub["sub"]
+    n_c_transform_c2_transformations_upsample_loglinear["upsample_loglinear"]
     n_c_transform_c2_transformations_yoy_pct["yoy_pct"]
   end
   n_a_core_a2_schema_PeriodInterval_periods_at["a2_schema.PeriodInterval.periods_at"]:::ext
   n_a_core_a2_schema_to_wide["a2_schema.to_wide"]:::ext
+  n_c_transform_c1_load_upsample["c1_load.upsample"]:::ext
+  n_c_transform_c3_derived_bus_debt_flow["c3_derived.bus_debt_flow"]:::ext
+  n_c_transform_c3_derived_bus_debt_flow_gdp["c3_derived.bus_debt_flow_gdp"]:::ext
   n_c_transform_c3_derived_bus_debt_level["c3_derived.bus_debt_level"]:::ext
   n_c_transform_c3_derived_bus_debt_level_gdp["c3_derived.bus_debt_level_gdp"]:::ext
+  n_c_transform_c3_derived_govt_debt_flow["c3_derived.govt_debt_flow"]:::ext
+  n_c_transform_c3_derived_govt_debt_flow_gdp["c3_derived.govt_debt_flow_gdp"]:::ext
   n_c_transform_c3_derived_govt_debt_level_gdp["c3_derived.govt_debt_level_gdp"]:::ext
+  n_c_transform_c3_derived_hh_debt_flow_gdp["c3_derived.hh_debt_flow_gdp"]:::ext
   n_c_transform_c3_derived_hh_debt_level_gdp["c3_derived.hh_debt_level_gdp"]:::ext
   n_c_transform_c3_derived_nominal_growth["c3_derived.nominal_growth"]:::ext
+  n_c_transform_c3_derived_pgdp_growth["c3_derived.pgdp_growth"]:::ext
   n_c_transform_c3_derived_real_growth["c3_derived.real_growth"]:::ext
   n_c_transform_c3_derived_real_growth_ma_change["c3_derived.real_growth_ma_change"]:::ext
+  n_c_transform_c2_transformations_upsample_loglinear --> n_c_transform_c1_load_upsample
   n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_add
+  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_div
   n_a_core_a2_schema_PeriodInterval_periods_at --> n_c_transform_c2_transformations_ma
   n_a_core_a2_schema_to_wide --> n_c_transform_c2_transformations_ma
   n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_ma
   n_a_core_a2_schema_PeriodInterval_periods_at --> n_c_transform_c2_transformations_ma_change_pct_yoy
   n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_ma_change_pct_yoy
   n_c_transform_c2_transformations_ma --> n_c_transform_c2_transformations_ma_change_pct_yoy
-  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_ratio_pct
   n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_sub
+  n_a_core_a2_schema_to_wide --> n_c_transform_c2_transformations_upsample_loglinear
   n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_yoy_pct
+  n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_bus_debt_flow
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_bus_debt_flow_gdp
   n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_bus_debt_level
-  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_bus_debt_level_gdp
-  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_govt_debt_level_gdp
-  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_hh_debt_level_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_bus_debt_level_gdp
+  n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_govt_debt_flow
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_flow_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_flow_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_level_gdp
   n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_nominal_growth
+  n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_pgdp_growth
   n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_real_growth
   n_c_transform_c2_transformations_ma_change_pct_yoy --> n_c_transform_c3_derived_real_growth_ma_change
   click n_a_core_a2_schema_PeriodInterval_periods_at href "#fn-a_core-a2_schema-PeriodInterval.periods_at"
   click n_a_core_a2_schema_to_wide href "#fn-a_core-a2_schema-to_wide"
+  click n_c_transform_c1_load_upsample href "#fn-c_transform-c1_load-upsample"
   click n_c_transform_c2_transformations__combine href "#fn-c_transform-c2_transformations-_combine"
   click n_c_transform_c2_transformations_add href "#fn-c_transform-c2_transformations-add"
+  click n_c_transform_c2_transformations_div href "#fn-c_transform-c2_transformations-div"
   click n_c_transform_c2_transformations_ma href "#fn-c_transform-c2_transformations-ma"
   click n_c_transform_c2_transformations_ma_change_pct_yoy href "#fn-c_transform-c2_transformations-ma_change_pct_yoy"
-  click n_c_transform_c2_transformations_ratio_pct href "#fn-c_transform-c2_transformations-ratio_pct"
   click n_c_transform_c2_transformations_sub href "#fn-c_transform-c2_transformations-sub"
+  click n_c_transform_c2_transformations_upsample_loglinear href "#fn-c_transform-c2_transformations-upsample_loglinear"
   click n_c_transform_c2_transformations_yoy_pct href "#fn-c_transform-c2_transformations-yoy_pct"
+  click n_c_transform_c3_derived_bus_debt_flow href "#fn-c_transform-c3_derived-bus_debt_flow"
+  click n_c_transform_c3_derived_bus_debt_flow_gdp href "#fn-c_transform-c3_derived-bus_debt_flow_gdp"
   click n_c_transform_c3_derived_bus_debt_level href "#fn-c_transform-c3_derived-bus_debt_level"
   click n_c_transform_c3_derived_bus_debt_level_gdp href "#fn-c_transform-c3_derived-bus_debt_level_gdp"
+  click n_c_transform_c3_derived_govt_debt_flow href "#fn-c_transform-c3_derived-govt_debt_flow"
+  click n_c_transform_c3_derived_govt_debt_flow_gdp href "#fn-c_transform-c3_derived-govt_debt_flow_gdp"
   click n_c_transform_c3_derived_govt_debt_level_gdp href "#fn-c_transform-c3_derived-govt_debt_level_gdp"
+  click n_c_transform_c3_derived_hh_debt_flow_gdp href "#fn-c_transform-c3_derived-hh_debt_flow_gdp"
   click n_c_transform_c3_derived_hh_debt_level_gdp href "#fn-c_transform-c3_derived-hh_debt_level_gdp"
   click n_c_transform_c3_derived_nominal_growth href "#fn-c_transform-c3_derived-nominal_growth"
+  click n_c_transform_c3_derived_pgdp_growth href "#fn-c_transform-c3_derived-pgdp_growth"
   click n_c_transform_c3_derived_real_growth href "#fn-c_transform-c3_derived-real_growth"
   click n_c_transform_c3_derived_real_growth_ma_change href "#fn-c_transform-c3_derived-real_growth_ma_change"
   classDef ext stroke-dasharray: 4 3
@@ -1021,7 +1060,7 @@ flowchart LR
 - <a id="fn-c_transform-c2_transformations-yoy_pct"></a>**[`yoy_pct(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L22)** — Y/Y % change (as a decimal) per country; periods with no year-earlier value drop out.
   - returns: `_combine(df, year_ago, lambda now, th...`: `pd.DataFrame`
   - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
-  - called by: [`c3_derived.nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`c3_derived.real_growth`](#fn-c_transform-c3_derived-real_growth)
+  - called by: [`c3_derived.nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`c3_derived.pgdp_growth`](#fn-c_transform-c3_derived-pgdp_growth), [`c3_derived.real_growth`](#fn-c_transform-c3_derived-real_growth)
 - <a id="fn-c_transform-c2_transformations-ma"></a>**[`ma(df: pd.DataFrame, window: PeriodInterval) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L28)** — Trailing mean over `window` per country; windows spanning a missing period drop out.
   - returns: `df.iloc[0:0]`, `_combine(df, means, lambda _, mean: m...`: `pd.DataFrame`
   - calls: [`a2_schema.PeriodInterval.periods_at`](#fn-a_core-a2_schema-PeriodInterval.periods_at), [`a2_schema.to_wide`](#fn-a_core-a2_schema-to_wide), [`_combine`](#fn-c_transform-c2_transformations-_combine)
@@ -1030,21 +1069,25 @@ flowchart LR
   - returns: `df.iloc[0:0]`, `_combine(ma(df, front), back_means, l...`: `pd.DataFrame`
   - calls: [`a2_schema.PeriodInterval.periods_at`](#fn-a_core-a2_schema-PeriodInterval.periods_at), [`_combine`](#fn-c_transform-c2_transformations-_combine), [`ma`](#fn-c_transform-c2_transformations-ma)
   - called by: [`c3_derived.real_growth_ma_change`](#fn-c_transform-c3_derived-real_growth_ma_change)
-- <a id="fn-c_transform-c2_transformations-add"></a>**[`add(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L64)** — a + b per (country, period).
+- <a id="fn-c_transform-c2_transformations-upsample_loglinear"></a>**[`upsample_loglinear(df: pd.DataFrame, frequency: str) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L64)** — An annual series at `frequency`: each year's value at its last period, periods between interpolated
+  - returns: `values.merge(meta, on='country').assi...`: `pd.DataFrame`
+  - calls: [`a2_schema.to_wide`](#fn-a_core-a2_schema-to_wide)
+  - called by: [`c1_load.upsample`](#fn-c_transform-c1_load-upsample)
+- <a id="fn-c_transform-c2_transformations-add"></a>**[`add(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L78)** — a + b per (country, period).
   - returns: `_combine(a, b, lambda x, y: x + y)`: `pd.DataFrame`
   - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
-  - called by: [`c3_derived.bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level)
-- <a id="fn-c_transform-c2_transformations-sub"></a>**[`sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L69)** — a - b per (country, period).
+  - called by: [`c3_derived.bus_debt_flow`](#fn-c_transform-c3_derived-bus_debt_flow), [`c3_derived.bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level), [`c3_derived.govt_debt_flow`](#fn-c_transform-c3_derived-govt_debt_flow)
+- <a id="fn-c_transform-c2_transformations-sub"></a>**[`sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L83)** — a - b per (country, period).
   - returns: `_combine(a, b, lambda x, y: x - y)`: `pd.DataFrame`
   - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
-- <a id="fn-c_transform-c2_transformations-ratio_pct"></a>**[`ratio_pct(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L74)** — a as a % (decimal) of b per (country, period).
+- <a id="fn-c_transform-c2_transformations-div"></a>**[`div(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L88)** — a / b per (country, period); a % (as a decimal) when a is a part of b.
   - returns: `_combine(a, b, lambda x, y: x / y)`: `pd.DataFrame`
   - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
-  - called by: [`c3_derived.bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`c3_derived.govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`c3_derived.hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp)
-- <a id="fn-c_transform-c2_transformations-_combine"></a>**[`_combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Series], pd.Series]) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L79)** — a's rows where b has the same (country, period), with value = op(a, b); NaN results drop out.
+  - called by: [`c3_derived.bus_debt_flow_gdp`](#fn-c_transform-c3_derived-bus_debt_flow_gdp), [`c3_derived.bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`c3_derived.govt_debt_flow_gdp`](#fn-c_transform-c3_derived-govt_debt_flow_gdp), [`c3_derived.govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`c3_derived.hh_debt_flow_gdp`](#fn-c_transform-c3_derived-hh_debt_flow_gdp), [`c3_derived.hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp)
+- <a id="fn-c_transform-c2_transformations-_combine"></a>**[`_combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Series], pd.Series]) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L93)** — a's rows where b has the same (country, period), with value = op(a, b); NaN results drop out.
   - returns: `out.dropna(subset=['value']).reset_in...`: `pd.DataFrame`
   - calls: *(none)*
-  - called by: [`add`](#fn-c_transform-c2_transformations-add), [`ma`](#fn-c_transform-c2_transformations-ma), [`ma_change_pct_yoy`](#fn-c_transform-c2_transformations-ma_change_pct_yoy), [`ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`sub`](#fn-c_transform-c2_transformations-sub), [`yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct)
+  - called by: [`add`](#fn-c_transform-c2_transformations-add), [`div`](#fn-c_transform-c2_transformations-div), [`ma`](#fn-c_transform-c2_transformations-ma), [`ma_change_pct_yoy`](#fn-c_transform-c2_transformations-ma_change_pct_yoy), [`sub`](#fn-c_transform-c2_transformations-sub), [`yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct)
 
 ### <a id="mod-c_transform-c3_derived"></a>[`c_transform.c3_derived`](../src/macroscan/c_transform/c3_derived.py)
 
@@ -1054,39 +1097,57 @@ Derived indicators, defined in code: one recipe per derived Indicator.
 flowchart LR
   subgraph this["c_transform.c3_derived"]
     n_c_transform_c3_derived_apply_derivations["apply_derivations"]
+    n_c_transform_c3_derived_bus_debt_flow["bus_debt_flow"]
+    n_c_transform_c3_derived_bus_debt_flow_gdp["bus_debt_flow_gdp"]
     n_c_transform_c3_derived_bus_debt_level["bus_debt_level"]
     n_c_transform_c3_derived_bus_debt_level_gdp["bus_debt_level_gdp"]
     n_c_transform_c3_derived_derivation["derivation"]
     n_c_transform_c3_derived_derived["derived"]
+    n_c_transform_c3_derived_govt_debt_flow["govt_debt_flow"]
+    n_c_transform_c3_derived_govt_debt_flow_gdp["govt_debt_flow_gdp"]
     n_c_transform_c3_derived_govt_debt_level_gdp["govt_debt_level_gdp"]
+    n_c_transform_c3_derived_hh_debt_flow_gdp["hh_debt_flow_gdp"]
     n_c_transform_c3_derived_hh_debt_level_gdp["hh_debt_level_gdp"]
     n_c_transform_c3_derived_nominal_growth["nominal_growth"]
     n_c_transform_c3_derived_ordered["ordered"]
+    n_c_transform_c3_derived_pgdp_growth["pgdp_growth"]
     n_c_transform_c3_derived_real_growth["real_growth"]
     n_c_transform_c3_derived_real_growth_ma_change["real_growth_ma_change"]
   end
   n_a_core_a2_schema_PeriodInterval_months["a2_schema.PeriodInterval.months"]:::ext
   n_a_core_a3_indicators_Indicator_parse["a3_indicators.Indicator.parse"]:::ext
   n_c_transform_c2_transformations_add["c2_transformations.add"]:::ext
+  n_c_transform_c2_transformations_div["c2_transformations.div"]:::ext
   n_c_transform_c2_transformations_ma_change_pct_yoy["c2_transformations.ma_change_pct_yoy"]:::ext
-  n_c_transform_c2_transformations_ratio_pct["c2_transformations.ratio_pct"]:::ext
   n_c_transform_c2_transformations_yoy_pct["c2_transformations.yoy_pct"]:::ext
   n_c_transform_c3_derived_Derivation["c3_derived.Derivation"]:::ext
   n_d_visualization_d2_app__data["d2_app._data"]:::ext
   n_c_transform_c3_derived_ordered --> n_c_transform_c3_derived_apply_derivations
+  n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_bus_debt_flow
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_bus_debt_flow
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_bus_debt_flow_gdp
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_bus_debt_flow_gdp
   n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_bus_debt_level
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_bus_debt_level
-  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_bus_debt_level_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_bus_debt_level_gdp
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_bus_debt_level_gdp
   n_a_core_a3_indicators_Indicator_parse --> n_c_transform_c3_derived_derivation
   n_c_transform_c3_derived_Derivation --> n_c_transform_c3_derived_derivation
   n_c_transform_c3_derived_derivation --> n_c_transform_c3_derived_derived
-  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_govt_debt_flow
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_govt_debt_flow
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_flow_gdp
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_govt_debt_flow_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_level_gdp
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_govt_debt_level_gdp
-  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_hh_debt_level_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_flow_gdp
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_hh_debt_flow_gdp
+  n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_level_gdp
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_hh_debt_level_gdp
   n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_nominal_growth
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_nominal_growth
+  n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_pgdp_growth
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_pgdp_growth
   n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_real_growth
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_real_growth
   n_a_core_a2_schema_PeriodInterval_months --> n_c_transform_c3_derived_real_growth_ma_change
@@ -1096,19 +1157,25 @@ flowchart LR
   click n_a_core_a2_schema_PeriodInterval_months href "#fn-a_core-a2_schema-PeriodInterval.months"
   click n_a_core_a3_indicators_Indicator_parse href "#fn-a_core-a3_indicators-Indicator.parse"
   click n_c_transform_c2_transformations_add href "#fn-c_transform-c2_transformations-add"
+  click n_c_transform_c2_transformations_div href "#fn-c_transform-c2_transformations-div"
   click n_c_transform_c2_transformations_ma_change_pct_yoy href "#fn-c_transform-c2_transformations-ma_change_pct_yoy"
-  click n_c_transform_c2_transformations_ratio_pct href "#fn-c_transform-c2_transformations-ratio_pct"
   click n_c_transform_c2_transformations_yoy_pct href "#fn-c_transform-c2_transformations-yoy_pct"
   click n_c_transform_c3_derived_Derivation href "#cls-Derivation"
   click n_c_transform_c3_derived_apply_derivations href "#fn-c_transform-c3_derived-apply_derivations"
+  click n_c_transform_c3_derived_bus_debt_flow href "#fn-c_transform-c3_derived-bus_debt_flow"
+  click n_c_transform_c3_derived_bus_debt_flow_gdp href "#fn-c_transform-c3_derived-bus_debt_flow_gdp"
   click n_c_transform_c3_derived_bus_debt_level href "#fn-c_transform-c3_derived-bus_debt_level"
   click n_c_transform_c3_derived_bus_debt_level_gdp href "#fn-c_transform-c3_derived-bus_debt_level_gdp"
   click n_c_transform_c3_derived_derivation href "#fn-c_transform-c3_derived-derivation"
   click n_c_transform_c3_derived_derived href "#fn-c_transform-c3_derived-derived"
+  click n_c_transform_c3_derived_govt_debt_flow href "#fn-c_transform-c3_derived-govt_debt_flow"
+  click n_c_transform_c3_derived_govt_debt_flow_gdp href "#fn-c_transform-c3_derived-govt_debt_flow_gdp"
   click n_c_transform_c3_derived_govt_debt_level_gdp href "#fn-c_transform-c3_derived-govt_debt_level_gdp"
+  click n_c_transform_c3_derived_hh_debt_flow_gdp href "#fn-c_transform-c3_derived-hh_debt_flow_gdp"
   click n_c_transform_c3_derived_hh_debt_level_gdp href "#fn-c_transform-c3_derived-hh_debt_level_gdp"
   click n_c_transform_c3_derived_nominal_growth href "#fn-c_transform-c3_derived-nominal_growth"
   click n_c_transform_c3_derived_ordered href "#fn-c_transform-c3_derived-ordered"
+  click n_c_transform_c3_derived_pgdp_growth href "#fn-c_transform-c3_derived-pgdp_growth"
   click n_c_transform_c3_derived_real_growth href "#fn-c_transform-c3_derived-real_growth"
   click n_c_transform_c3_derived_real_growth_ma_change href "#fn-c_transform-c3_derived-real_growth_ma_change"
   click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
@@ -1122,7 +1189,7 @@ flowchart LR
 - <a id="fn-c_transform-c3_derived-derived"></a>**[`derived(*, unit: str | None=None) -> Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]`](../src/macroscan/c_transform/c3_derived.py#L47)** — Decorator: register the function in DERIVED as the recipe for the Indicator it is named after.
   - returns: `register`: `Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]`
   - calls: [`derivation`](#fn-c_transform-c3_derived-derivation)
-  - called by: [`bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level), [`bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp), [`nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`real_growth`](#fn-c_transform-c3_derived-real_growth), [`real_growth_ma_change`](#fn-c_transform-c3_derived-real_growth_ma_change)
+  - called by: [`bus_debt_flow`](#fn-c_transform-c3_derived-bus_debt_flow), [`bus_debt_flow_gdp`](#fn-c_transform-c3_derived-bus_debt_flow_gdp), [`bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level), [`bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`govt_debt_flow`](#fn-c_transform-c3_derived-govt_debt_flow), [`govt_debt_flow_gdp`](#fn-c_transform-c3_derived-govt_debt_flow_gdp), [`govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`hh_debt_flow_gdp`](#fn-c_transform-c3_derived-hh_debt_flow_gdp), [`hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp), [`nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`pgdp_growth`](#fn-c_transform-c3_derived-pgdp_growth), [`real_growth`](#fn-c_transform-c3_derived-real_growth), [`real_growth_ma_change`](#fn-c_transform-c3_derived-real_growth_ma_change)
 - <a id="fn-c_transform-c3_derived-ordered"></a>**[`ordered(derivations: dict[Indicator, Derivation]=DERIVED) -> list[Derivation]`](../src/macroscan/c_transform/c3_derived.py#L58)** — The derivations, each after any it builds on; raises graphlib.CycleError on a cycle.
   - returns: `[derivations[i] for i in TopologicalS...`: `list[Derivation]`
   - calls: *(none)*
@@ -1147,14 +1214,32 @@ flowchart LR
   - returns: `add(bus_loans, bus_debt_securities)`: *(unannotated)*
   - calls: [`c2_transformations.add`](#fn-c_transform-c2_transformations-add), [`derived`](#fn-c_transform-c3_derived-derived)
 - <a id="fn-c_transform-c3_derived-hh_debt_level_gdp"></a>**[`hh_debt_level_gdp(hh_debt_level, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L121)** — *(no docstring)*
-  - returns: `ratio_pct(hh_debt_level, nominal_gdp)`: *(unannotated)*
-  - calls: [`c2_transformations.ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+  - returns: `div(hh_debt_level, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
 - <a id="fn-c_transform-c3_derived-bus_debt_level_gdp"></a>**[`bus_debt_level_gdp(bus_debt_level, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L126)** — *(no docstring)*
-  - returns: `ratio_pct(bus_debt_level, nominal_gdp)`: *(unannotated)*
-  - calls: [`c2_transformations.ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+  - returns: `div(bus_debt_level, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
 - <a id="fn-c_transform-c3_derived-govt_debt_level_gdp"></a>**[`govt_debt_level_gdp(govt_debt_level, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L131)** — *(no docstring)*
-  - returns: `ratio_pct(govt_debt_level, nominal_gdp)`: *(unannotated)*
-  - calls: [`c2_transformations.ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+  - returns: `div(govt_debt_level, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-pgdp_growth"></a>**[`pgdp_growth(pgdp)`](../src/macroscan/c_transform/c3_derived.py#L137)** — *(no docstring)*
+  - returns: `yoy_pct(pgdp)`: *(unannotated)*
+  - calls: [`c2_transformations.yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-bus_debt_flow"></a>**[`bus_debt_flow(bus_loans_flow, bus_debt_securities_flow)`](../src/macroscan/c_transform/c3_derived.py#L142)** — *(no docstring)*
+  - returns: `add(bus_loans_flow, bus_debt_securiti...`: *(unannotated)*
+  - calls: [`c2_transformations.add`](#fn-c_transform-c2_transformations-add), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-govt_debt_flow"></a>**[`govt_debt_flow(govt_loans_flow, govt_debt_securities_flow)`](../src/macroscan/c_transform/c3_derived.py#L147)** — *(no docstring)*
+  - returns: `add(govt_loans_flow, govt_debt_securi...`: *(unannotated)*
+  - calls: [`c2_transformations.add`](#fn-c_transform-c2_transformations-add), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-hh_debt_flow_gdp"></a>**[`hh_debt_flow_gdp(hh_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L154)** — *(no docstring)*
+  - returns: `div(hh_debt_flow, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-bus_debt_flow_gdp"></a>**[`bus_debt_flow_gdp(bus_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L159)** — *(no docstring)*
+  - returns: `div(bus_debt_flow, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-govt_debt_flow_gdp"></a>**[`govt_debt_flow_gdp(govt_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L164)** — *(no docstring)*
+  - returns: `div(govt_debt_flow, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
 - <a id="cls-Derivation"></a>**[class `Derivation`](../src/macroscan/c_transform/c3_derived.py#L27)** — How `indicator` is computed: `func` called with one long frame per input, by lower-cased name.
 
 ### <a id="mod-d_visualization-d1_frames"></a>[`d_visualization.d1_frames`](../src/macroscan/d_visualization/d1_frames.py)

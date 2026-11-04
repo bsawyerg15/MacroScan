@@ -18,7 +18,7 @@ import pandas as pd
 
 from macroscan.a_core.a2_schema import PeriodInterval
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.c_transform.c2_transformations import add, ma_change_pct_yoy, ratio_pct, yoy_pct
+from macroscan.c_transform.c2_transformations import add, div, ma_change_pct_yoy, yoy_pct
 
 DERIVED_SOURCE = "derived"
 
@@ -119,17 +119,50 @@ def bus_debt_level(bus_loans, bus_debt_securities):
 # NOMINAL_GDP is pulled at annual levels (TRANSFORMATION=LA), so a quarter's debt stock divides by it directly.
 @derived(unit="%")
 def hh_debt_level_gdp(hh_debt_level, nominal_gdp):
-    return ratio_pct(hh_debt_level, nominal_gdp)
+    return div(hh_debt_level, nominal_gdp)
 
 
 @derived(unit="%")
 def bus_debt_level_gdp(bus_debt_level, nominal_gdp):
-    return ratio_pct(bus_debt_level, nominal_gdp)
+    return div(bus_debt_level, nominal_gdp)
 
 
 @derived(unit="%")
 def govt_debt_level_gdp(govt_debt_level, nominal_gdp):
-    return ratio_pct(govt_debt_level, nominal_gdp)
+    return div(govt_debt_level, nominal_gdp)
+
+
+# PGDP (real potential GDP) is published annually; c1_load also upsamples it to quarterly.
+@derived(unit="%")
+def pgdp_growth(pgdp):
+    return yoy_pct(pgdp)
+
+
+@derived()
+def bus_debt_flow(bus_loans_flow, bus_debt_securities_flow):
+    return add(bus_loans_flow, bus_debt_securities_flow)
+
+
+@derived()
+def govt_debt_flow(govt_loans_flow, govt_debt_securities_flow):
+    return add(govt_loans_flow, govt_debt_securities_flow)
+
+
+# TODO: annualize flows. They're stored as published: per-quarter amounts, except USA's, which are annual rates,
+# so dividing by annual-level NOMINAL_GDP isn't yet comparable across countries.
+@derived(unit="%")
+def hh_debt_flow_gdp(hh_debt_flow, nominal_gdp):
+    return div(hh_debt_flow, nominal_gdp)
+
+
+@derived(unit="%")
+def bus_debt_flow_gdp(bus_debt_flow, nominal_gdp):
+    return div(bus_debt_flow, nominal_gdp)
+
+
+@derived(unit="%")
+def govt_debt_flow_gdp(govt_debt_flow, nominal_gdp):
+    return div(govt_debt_flow, nominal_gdp)
 
 
 __all__ = ["DERIVED", "Derivation", "apply_derivations", "derivation", "derived", "lineage", "ordered"]

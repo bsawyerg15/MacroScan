@@ -4,7 +4,7 @@ import pytest
 
 from macroscan.a_core.a2_schema import FETCH_COLUMNS, PeriodInterval, parse_periods
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.c_transform.c2_transformations import add, ma, ma_change_pct_yoy, ratio_pct, sub, yoy_pct
+from macroscan.c_transform.c2_transformations import add, div, ma, ma_change_pct_yoy, sub, upsample_loglinear, yoy_pct
 
 
 def frame(frequency, periods, values, indicator=Indicator.REAL_GDP, country="USA"):
@@ -48,10 +48,10 @@ def test_yoy_pct_keeps_countries_apart():
 
 
 def test_binary_ops_align_on_country_and_period():
-    """add/sub/ratio_pct pair rows by (country, period); unmatched rows drop out, a's metadata is kept."""
+    """add/sub/div pair rows by (country, period); unmatched rows drop out, a's metadata is kept."""
     a = pd.concat([frame("Q", ["2025Q1", "2025Q2"], [30, 40]), frame("Q", ["2025Q1"], [5], country="DEU")])
     b = frame("Q", ["2025Q2", "2025Q3"], [200, 300], indicator=Indicator.NOMINAL_GDP)
-    for op, expected in [(add, 240), (sub, -160), (ratio_pct, 0.20)]:
+    for op, expected in [(add, 240), (sub, -160), (div, 0.20)]:
         out = op(a, b)
         assert list(zip(out["country"], out["period"].astype(str))) == [("USA", "2025Q2")]
         assert out["value"].tolist() == pytest.approx([expected])
@@ -62,7 +62,7 @@ def test_binary_ops_reject_mixed_frequencies():
     """Quarterly and annual periods never align, so combining them raises instead of returning nothing."""
     q = frame("Q", ["2025Q1"], [30])
     a = frame("A", ["2025"], [200], indicator=Indicator.NOMINAL_GDP)
-    for op in (add, sub, ratio_pct):
+    for op in (add, sub, div):
         with pytest.raises(ValueError, match="one frequency"):
             op(q, a)
 
@@ -116,3 +116,18 @@ def test_ma_change_pct_yoy_window_that_does_not_fit_the_frequency_yields_nothing
     """One month is no whole number of quarters, so quarterly data gets no rows."""
     out = ma_change_pct_yoy(frame("Q", ["2024Q1", "2024Q2"], [1, 2]), PeriodInterval.months(1), PeriodInterval.months(18))
     assert out.empty
+
+
+def test_upsample_loglinear_interpolates_geometrically_between_year_ends():
+    """Each year's value lands on its Q4; quarters between grow at a constant rate; nothing before the first Q4."""
+    annual = pd.concat(
+        [frame("A", ["2023", "2024"], [100.0, 116.0]), frame("A", ["2024"], [50.0], country="DEU")],
+        ignore_index=True,
+    )
+    out = upsample_loglinear(annual, "Q")
+    usa = out[out["country"] == "USA"]
+    assert usa["period"].astype(str).tolist() == ["2023Q4", "2024Q1", "2024Q2", "2024Q3", "2024Q4"]
+    assert usa["value"].tolist() == pytest.approx([100 * 1.16 ** (k / 4) for k in range(5)])
+    assert out[out["country"] == "DEU"]["period"].astype(str).tolist() == ["2024Q4"]
+    assert (out["frequency"] == "Q").all() and out["period"].dtype == pd.PeriodDtype("Q")
+    assert list(out.columns) == list(annual.columns)

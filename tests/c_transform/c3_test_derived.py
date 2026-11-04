@@ -142,3 +142,36 @@ def test_apply_derivations_with_ma_skips_frequencies_the_window_does_not_fit():
     derived = out["M"][out["M"]["indicator"] == Indicator.REAL_GROWTH]
     assert derived["value"].tolist() == pytest.approx([2.0])
     assert not (out["A"]["indicator"] == Indicator.REAL_GROWTH).any()
+
+
+def test_apply_derivations_pgdp_growth_and_debt_flow_gdp():
+    """PGDP_GROWTH is Y/Y growth of PGDP; a debt flow divides by nominal GDP."""
+    q = pd.concat(
+        [
+            frame("Q", ["2024Q3", "2025Q3"], [100, 102], indicator=Indicator.PGDP),
+            frame("Q", ["2025Q3"], [5], indicator=Indicator.HH_DEBT_FLOW),
+            frame("Q", ["2025Q3"], [200], indicator=Indicator.NOMINAL_GDP),
+        ],
+        ignore_index=True,
+    )
+    out = apply_derivations({"Q": q})["Q"].set_index("indicator")
+    assert out.at[Indicator.PGDP_GROWTH, "value"] == pytest.approx(0.02)
+    assert out.at[Indicator.PGDP_GROWTH, "unit"] == "%"
+    assert out.at[Indicator.HH_DEBT_FLOW_GDP, "value"] == pytest.approx(0.025)
+    assert out.at[Indicator.HH_DEBT_FLOW_GDP, "unit"] == "%"
+
+
+def test_apply_derivations_chains_debt_flows():
+    """Loans plus debt securities flows make BUS_DEBT_FLOW, which then divides by nominal GDP."""
+    q = pd.concat(
+        [
+            frame("Q", ["2025Q1"], [6], indicator=Indicator.BUS_LOANS_FLOW),
+            frame("Q", ["2025Q1"], [4], indicator=Indicator.BUS_DEBT_SECURITIES_FLOW),
+            frame("Q", ["2025Q1"], [200], indicator=Indicator.NOMINAL_GDP),
+        ],
+        ignore_index=True,
+    )
+    out = apply_derivations({"Q": q})["Q"].set_index("indicator")
+    assert out.at[Indicator.BUS_DEBT_FLOW, "value"] == pytest.approx(10)
+    assert out.at[Indicator.BUS_DEBT_FLOW_GDP, "value"] == pytest.approx(0.05)
+    assert Indicator.GOVT_DEBT_FLOW not in out.index  # its inputs are missing
