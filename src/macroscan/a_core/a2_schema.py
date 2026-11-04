@@ -8,7 +8,7 @@ at the chart boundary.
 
 from __future__ import annotations
 
-from enum import Enum
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -35,17 +35,33 @@ PANDAS_FREQ = {"A": "Y", "Q": "Q", "M": "M"}
 PERIODS_PER_YEAR = {"A": 1, "Q": 4, "M": 12}
 
 
-class Transformation(Enum):
-    """How a derived indicator is computed from another; the value is the label used in config."""
-    YOY_PCT = "Y/Y % Change"
+@dataclass(frozen=True)
+class PeriodInterval:
+    """A span of time, e.g. PeriodInterval.months(12); `periods_at` counts it at one of our frequencies."""
+
+    total_months: int
+
+    def __post_init__(self) -> None:
+        if self.total_months < 1:
+            raise ValueError(f"interval must be at least one month, got {self.total_months}")
 
     @classmethod
-    def parse(cls, text: str) -> Transformation:
-        """Look up a transformation by its config label (case-insensitive)."""
-        for t in cls:
-            if t.value.lower() == text.strip().lower():
-                return t
-        raise ValueError(f"unknown transformation {text!r}; expected one of {[t.value for t in cls]}")
+    def months(cls, n: int) -> PeriodInterval:
+        return cls(n)
+
+    @classmethod
+    def quarters(cls, n: int) -> PeriodInterval:
+        return cls(3 * n)
+
+    @classmethod
+    def years(cls, n: int) -> PeriodInterval:
+        return cls(12 * n)
+
+    def periods_at(self, frequency: str) -> int | None:
+        """How many `frequency` periods span this interval; None if it isn't a whole number of them."""
+        months_per_period = 12 // PERIODS_PER_YEAR[frequency]
+        whole, rest = divmod(self.total_months, months_per_period)
+        return whole if rest == 0 else None
 
 
 def parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series:

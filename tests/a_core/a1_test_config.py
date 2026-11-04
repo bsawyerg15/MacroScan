@@ -5,16 +5,13 @@ import pytest
 from macroscan.a_core.a1_config import (
     COUNTRIES_FILE,
     TABLE_FILE,
-    TRANSFORMATIONS_FILE,
     ConfigError,
     load_all_series,
     load_countries,
     load_table_indicators,
-    load_transformations,
     parse_filters,
     slug,
 )
-from macroscan.a_core.a2_schema import Transformation
 from macroscan.a_core.a3_indicators import Indicator
 from macroscan.a_core.a4_countries import Country
 
@@ -101,27 +98,6 @@ def test_duplicate_series(tmp_path):
         load_all_series(tmp_path)
 
 
-def test_load_transformations(tmp_path):
-    """Rows parse into TransformSpecs; unknown indicators, bad labels and duplicates raise ConfigError."""
-    path = tmp_path / "t.csv"
-    header = "new_indicator,old_indicator,transformation\n"
-
-    path.write_text(header + "REAL_GROWTH,REAL_GDP,y/y % change\n")
-    [spec] = load_transformations(path)
-    assert spec.transformation is Transformation.YOY_PCT
-    assert (spec.new_indicator, spec.old_indicator) == (Indicator.REAL_GROWTH, Indicator.REAL_GDP)
-
-    for bad in [
-        "Real Growth (%),REAL_GDP,Y/Y % Change",
-        "REAL_GROWTH,REAL_GDP,Squared",
-        "REAL_GDP,REAL_GDP,Y/Y % Change",
-        "REAL_GROWTH,REAL_GDP,Y/Y % Change\nREAL_GROWTH,CPI,Y/Y % Change",
-    ]:
-        path.write_text(header + bad + "\n")
-        with pytest.raises(ConfigError):
-            load_transformations(path)
-
-
 def test_load_table_indicators(tmp_path):
     """The listed indicators come back in file order; unknown or repeated ones raise ConfigError."""
     path = tmp_path / "t.csv"
@@ -137,5 +113,4 @@ def test_repo_config_is_consistent():
     """The real config/ loads: every indicator it names is defined in Indicator."""
     load_countries(REPO_CONFIG / COUNTRIES_FILE)
     load_all_series(REPO_CONFIG)
-    load_transformations(REPO_CONFIG / TRANSFORMATIONS_FILE)
     load_table_indicators(REPO_CONFIG / TABLE_FILE)

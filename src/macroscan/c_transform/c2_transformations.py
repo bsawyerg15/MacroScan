@@ -1,7 +1,10 @@
-"""Derive new indicators from ingested ones, as configured in 03_transformations.csv.
+"""Building blocks for derived indicators: pure functions over canonical long frames.
 
-`apply_transformations` is the single entry point: it appends one derived indicator per
-TransformSpec, running the matching function on each (country) series of the old indicator.
+Each takes one indicator's rows at one frequency (any number of countries) and returns rows
+in the same shape; `c3_derived` composes them into recipes and stamps the metadata.
+Windowed operations take a PeriodInterval, so one recipe means the same span at every frequency.
+Binary operations align on (country, period); periods missing from either side drop out,
+and inputs of different frequencies raise ValueError.
 """
 
 from __future__ import annotations
@@ -10,51 +13,55 @@ from typing import Callable
 
 import pandas as pd
 
-from macroscan.a_core.a1_config import TransformSpec
-from macroscan.a_core.a2_schema import PERIODS_PER_YEAR, Transformation
+from macroscan.a_core.a2_schema import PERIODS_PER_YEAR, PeriodInterval, to_wide
 
-DERIVED_SOURCE = "derived"
+KEYS = ["country", "period"]
 
 
 def yoy_pct(df: pd.DataFrame) -> pd.DataFrame:
-    """Y/Y % change of one country's series at one frequency; periods with no year-earlier value drop out."""
-    value = df.set_index("period")["value"]
-    year_ago = value.copy()
-    year_ago.index = year_ago.index + PERIODS_PER_YEAR[df["frequency"].iloc[0]]  # align t-n to t; gaps give NaN
-    change = ((value / year_ago.reindex(value.index) - 1) * 100).dropna()
-    return df.set_index("period").loc[change.index].assign(value=change).reset_index()
+    """Y/Y % change per country; periods with no year-earlier value drop out."""
+    year_ago = df[[*KEYS, "value"]].assign(period=df["period"] + PERIODS_PER_YEAR[df["frequency"].iloc[0]])
+    return _combine(df, year_ago, lambda now, then: (now / then - 1) * 100)
 
 
-# Each function takes one country's series (one indicator, one frequency) and returns the transformed rows.
-TRANSFORMS: dict[Transformation, Callable[[pd.DataFrame], pd.DataFrame]] = {Transformation.YOY_PCT: yoy_pct}
-UNITS = {Transformation.YOY_PCT: "%"}
+def ma(df: pd.DataFrame, window: PeriodInterval) -> pd.DataFrame:
+    """Trailing mean over `window` per country; windows spanning a missing period drop out.
 
-
-def apply_transformations(data: dict[str, pd.DataFrame], specs: list[TransformSpec]) -> dict[str, pd.DataFrame]:
-    """`data` ({frequency: long frame}) plus each spec's derived indicator; inputs are not modified.
-
-    Specs apply in order, so a spec may build on an earlier one's output. An old indicator
-    with no data yields nothing.
+    Yields no rows at a frequency the window doesn't divide into (e.g. 3 months on annual data).
     """
-    out = dict(data)
-    for spec in specs:
-        func = TRANSFORMS[spec.transformation]
-        for frequency, df in list(out.items()):
-            old = df[df["indicator"] == spec.old_indicator]
-            if old.empty:
-                continue
-            derived = pd.concat([func(s) for _, s in old.groupby("country", sort=False)])
-            derived = derived.assign(
-                source=DERIVED_SOURCE,
-                indicator=spec.new_indicator,
-                unit=UNITS[spec.transformation],
-                status=None,
-                series_key=f"{spec.transformation.value}:" + derived["series_key"],
-            )
-            if "pulled_at" in derived:
-                derived = derived.drop(columns="pulled_at")
-            out[frequency] = pd.concat([df, derived[[c for c in df.columns if c in derived]]], ignore_index=True)
-    return out
+    periods = window.periods_at(df["frequency"].iloc[0])
+    if periods is None:
+        return df.iloc[0:0]
+    wide = to_wide(df)
+    # Fill in missing periods as NaN so rolling counts periods, not rows, and never spans a gap.
+    full = pd.period_range(wide.index.min(), wide.index.max(), freq=wide.index.freq, name="period")
+    means = wide.reindex(full).rolling(periods).mean().stack().rename("value").reset_index()
+    return _combine(df, means, lambda _, mean: mean)
 
 
-__all__ = ["apply_transformations", "yoy_pct", "TRANSFORMS"]
+def add(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
+    """a + b per (country, period)."""
+    return _combine(a, b, lambda x, y: x + y)
+
+
+def sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
+    """a - b per (country, period)."""
+    return _combine(a, b, lambda x, y: x - y)
+
+
+def ratio_pct(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
+    """a as a % of b per (country, period)."""
+    return _combine(a, b, lambda x, y: x / y * 100)
+
+
+def _combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Series], pd.Series]) -> pd.DataFrame:
+    """a's rows where b has the same (country, period), with value = op(a, b); NaN results drop out."""
+    # Periods of different frequencies never compare equal, so a mismatch would silently match nothing.
+    if a["period"].dtype != b["period"].dtype:
+        raise ValueError(f"cannot combine {a['period'].dtype} with {b['period'].dtype}; convert to one frequency first")
+    merged = a.merge(b[[*KEYS, "value"]], on=KEYS, suffixes=("", "_b"))
+    out = merged.assign(value=op(merged["value"], merged["value_b"])).drop(columns="value_b")
+    return out.dropna(subset=["value"]).reset_index(drop=True)
+
+
+__all__ = ["yoy_pct", "ma", "add", "sub", "ratio_pct"]

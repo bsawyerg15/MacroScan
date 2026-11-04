@@ -1,10 +1,10 @@
-"""Load the CSV config files: countries, each source's series, transformations and the app table.
+"""Load the CSV config files: countries, each source's series and the app table.
 
 Countries are defined in `a4_countries.Country`; 01_countries.csv picks which to use by ISO3 code.
 
 An indicator is a concept (REAL_GDP), defined in `a3_indicators.Indicator`; CSVs name it by
 member name. Each source's NN_<source>_indicators.csv maps an (indicator, frequency) to how
-that source serves it.
+that source serves it. Derived indicators are defined in code, in `c3_derived`.
 """
 
 from __future__ import annotations
@@ -14,13 +14,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from macroscan.a_core.a2_schema import PANDAS_FREQ, Transformation
+from macroscan.a_core.a2_schema import PANDAS_FREQ
 from macroscan.a_core.a3_indicators import Indicator
 from macroscan.a_core.a4_countries import Country
 
 DEFAULT_CONFIG_DIR = Path("config")
 COUNTRIES_FILE = "01_countries.csv"
-TRANSFORMATIONS_FILE = "03_transformations.csv"
 TABLE_FILE = "04_table.csv"  # not *_indicators.csv, which would be read as a source
 SERIES_SUFFIX = "_indicators.csv"  # e.g. 02_oecd_indicators.csv -> source "oecd"
 
@@ -56,14 +55,6 @@ class SeriesSpec:
     def label(self) -> str:
         """'oecd/REAL_GDP/Q', for logs and error messages."""
         return f"{self.source}/{self.indicator}/{self.frequency}"
-
-
-@dataclass(frozen=True)
-class TransformSpec:
-    """Derive `new_indicator` by applying `transformation` to each series of `old_indicator`."""
-    new_indicator: Indicator
-    old_indicator: Indicator
-    transformation: Transformation
 
 
 def slug(indicator: str) -> str:
@@ -127,26 +118,6 @@ def _indicator(text: str, where: str) -> Indicator:
         return Indicator.parse(text)
     except ValueError as e:
         raise ConfigError(f"{where}: {e}") from None
-
-
-def load_transformations(path: Path) -> list[TransformSpec]:
-    """Load and validate the transformations CSV; both indicators must be defined Indicators."""
-    specs: list[TransformSpec] = []
-    seen: set[str] = set()
-    for n, row in enumerate(_read_rows(path, {"new_indicator", "old_indicator", "transformation"}), start=2):
-        where = f"{path} row {n}"
-        new, old = _indicator(row["new_indicator"], where), _indicator(row["old_indicator"], where)
-        if new == old:
-            raise ConfigError(f"{where}: {new!r} cannot be derived from itself")
-        if new in seen:
-            raise ConfigError(f"{where}: duplicate new indicator {new!r}")
-        seen.add(new)
-        try:
-            transformation = Transformation.parse(row["transformation"])
-        except ValueError as e:
-            raise ConfigError(f"{where}: {e}") from None
-        specs.append(TransformSpec(new_indicator=new, old_indicator=old, transformation=transformation))
-    return specs
 
 
 def load_table_indicators(path: Path) -> list[Indicator]:

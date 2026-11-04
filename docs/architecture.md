@@ -23,6 +23,7 @@ flowchart LR
   subgraph c_transform
     c_transform_c1_load["c1_load"]
     c_transform_c2_transformations["c2_transformations"]
+    c_transform_c3_derived["c3_derived"]
   end
   subgraph d_visualization
     d_visualization_d1_frames["d1_frames"]
@@ -47,13 +48,14 @@ flowchart LR
   b_ingest_b3_store --> b_ingest_b4_run
   a_core_a2_schema --> c_transform_c1_load
   b_ingest_b3_store --> c_transform_c1_load
-  a_core_a1_config --> c_transform_c2_transformations
   a_core_a2_schema --> c_transform_c2_transformations
+  a_core_a3_indicators --> c_transform_c3_derived
+  c_transform_c2_transformations --> c_transform_c3_derived
   a_core_a3_indicators --> d_visualization_d1_frames
   a_core_a1_config --> d_visualization_d2_app
   b_ingest_b3_store --> d_visualization_d2_app
   c_transform_c1_load --> d_visualization_d2_app
-  c_transform_c2_transformations --> d_visualization_d2_app
+  c_transform_c3_derived --> d_visualization_d2_app
   d_visualization_d1_frames --> d_visualization_d2_app
   click a_core_a1_config href "#mod-a_core-a1_config"
   click a_core_a2_schema href "#mod-a_core-a2_schema"
@@ -67,13 +69,14 @@ flowchart LR
   click b_ingest_b4_run href "#mod-b_ingest-b4_run"
   click c_transform_c1_load href "#mod-c_transform-c1_load"
   click c_transform_c2_transformations href "#mod-c_transform-c2_transformations"
+  click c_transform_c3_derived href "#mod-c_transform-c3_derived"
   click d_visualization_d1_frames href "#mod-d_visualization-d1_frames"
   click d_visualization_d2_app href "#mod-d_visualization-d2_app"
 ```
 
 | Module | What it does |
 |---|---|
-| [`a_core.a1_config`](#mod-a_core-a1_config) | Load the CSV config files: countries, each source's series, transformations and the app table. |
+| [`a_core.a1_config`](#mod-a_core-a1_config) | Load the CSV config files: countries, each source's series and the app table. |
 | [`a_core.a2_schema`](#mod-a_core-a2_schema) | The canonical long-format table every source produces, plus period helpers. |
 | [`a_core.a3_indicators`](#mod-a_core-a3_indicators) | The indicator registry: every conceptual indicator, with a display label and a description. |
 | [`a_core.a4_countries`](#mod-a_core-a4_countries) | The country registry: every country MacroScan knows, keyed by ISO3 code, with a display label. |
@@ -84,7 +87,8 @@ flowchart LR
 | [`b_ingest.b3_store`](#mod-b_ingest-b3_store) | Append-only change log of observations, one Parquet file per (source, indicator, frequency). |
 | [`b_ingest.b4_run`](#mod-b_ingest-b4_run) | Command line entry point: `macroscan ingest` and `macroscan describe`. |
 | [`c_transform.c1_load`](#mod-c_transform-c1_load) | Pull the ingested data into the transform stage. |
-| [`c_transform.c2_transformations`](#mod-c_transform-c2_transformations) | Derive new indicators from ingested ones, as configured in 03_transformations.csv. |
+| [`c_transform.c2_transformations`](#mod-c_transform-c2_transformations) | Building blocks for derived indicators: pure functions over canonical long frames. |
+| [`c_transform.c3_derived`](#mod-c_transform-c3_derived) | Derived indicators, defined in code: one recipe per derived Indicator. |
 | [`d_visualization.d1_frames`](#mod-d_visualization-d1_frames) | Shape the ingested data for the app: a latest-value table and chartable series. |
 | [`d_visualization.d2_app`](#mod-d_visualization-d2_app) | Streamlit app: latest values by indicator and country; click cells to chart them. |
 
@@ -92,8 +96,7 @@ flowchart LR
 |---|---|
 | [`ConfigError`](#cls-ConfigError) | Raised when a config CSV is missing, malformed or inconsistent. |
 | [`SeriesSpec`](#cls-SeriesSpec) | One source's series for an (indicator, frequency): where to fetch it and how to filter it. |
-| [`TransformSpec`](#cls-TransformSpec) | Derive `new_indicator` by applying `transformation` to each series of `old_indicator`. |
-| [`Transformation`](#cls-Transformation) | How a derived indicator is computed from another; the value is the label used in config. |
+| [`PeriodInterval`](#cls-PeriodInterval) | A span of time, e.g. PeriodInterval.months(12); `periods_at` counts it at one of our frequencies. |
 | [`Indicator`](#cls-Indicator) | A conceptual indicator; the value is the member name, as used in config and stored data. |
 | [`Country`](#cls-Country) | A country; the value is its ISO3 code (the member name), as used in config and stored data. |
 | [`Source`](#cls-Source) | A data provider. fetch() returns a frame with a2_schema.FETCH_COLUMNS. |
@@ -106,6 +109,7 @@ flowchart LR
 | [`SchemaError`](#cls-SchemaError) | Raised when a fetched frame doesn't match the canonical schema. |
 | [`ChangeSummary`](#cls-ChangeSummary) | What one ingest of a series changed. |
 | [`Store`](#cls-Store) | Reads and writes the per-series change logs and the manifest. |
+| [`Derivation`](#cls-Derivation) | How `indicator` is computed: `func` called with one long frame per input, by lower-cased name. |
 
 ## Classes
 
@@ -125,15 +129,14 @@ classDiagram
     name: str
     label(self) : str
   }
-  class TransformSpec {
-    new_indicator: Indicator
-    old_indicator: Indicator
-    transformation: Transformation
+  class PeriodInterval {
+    total_months: int
+    __post_init__(self) : None
+    months(cls, n: int) : PeriodInterval
+    quarters(cls, n: int) : PeriodInterval
+    years(cls, n: int) : PeriodInterval
+    periods_at(self, frequency: str) : int or None
   }
-  class Transformation {
-    parse(cls, text: str) : Transformation
-  }
-  Enum <|-- Transformation
   class Indicator {
     label: str
     description: str
@@ -214,10 +217,15 @@ classDiagram
     _write_manifest(self, manifest: dict) : None
     _update_manifest(self, key: str, summary: ChangeSummary, pulled_at, path: Path) : None
   }
+  class Derivation {
+    indicator: Indicator
+    inputs: tuple~Indicator, ...~
+    func: Callable~..., pd.DataFrame~
+    unit: str or None
+  }
   click ConfigError href "#cls-ConfigError"
   click SeriesSpec href "#cls-SeriesSpec"
-  click TransformSpec href "#cls-TransformSpec"
-  click Transformation href "#cls-Transformation"
+  click PeriodInterval href "#cls-PeriodInterval"
   click Indicator href "#cls-Indicator"
   click Country href "#cls-Country"
   click Source href "#cls-Source"
@@ -230,13 +238,14 @@ classDiagram
   click SchemaError href "#cls-SchemaError"
   click ChangeSummary href "#cls-ChangeSummary"
   click Store href "#cls-Store"
+  click Derivation href "#cls-Derivation"
 ```
 
 ## Reference
 
 ### <a id="mod-a_core-a1_config"></a>[`a_core.a1_config`](../src/macroscan/a_core/a1_config.py)
 
-Load the CSV config files: countries, each source's series, transformations and the app table.
+Load the CSV config files: countries, each source's series and the app table.
 
 ```mermaid
 flowchart LR
@@ -247,15 +256,12 @@ flowchart LR
     n_a_core_a1_config_load_countries["load_countries"]
     n_a_core_a1_config_load_series["load_series"]
     n_a_core_a1_config_load_table_indicators["load_table_indicators"]
-    n_a_core_a1_config_load_transformations["load_transformations"]
     n_a_core_a1_config_parse_filters["parse_filters"]
     n_a_core_a1_config_series_files["series_files"]
     n_a_core_a1_config_slug["slug"]
   end
   n_a_core_a1_config_ConfigError["a1_config.ConfigError"]:::ext
   n_a_core_a1_config_SeriesSpec["a1_config.SeriesSpec"]:::ext
-  n_a_core_a1_config_TransformSpec["a1_config.TransformSpec"]:::ext
-  n_a_core_a2_schema_Transformation_parse["a2_schema.Transformation.parse"]:::ext
   n_a_core_a3_indicators_Indicator_parse["a3_indicators.Indicator.parse"]:::ext
   n_a_core_a4_countries_Country_parse["a4_countries.Country.parse"]:::ext
   n_b_ingest_b3_store_Store__find["b3_store.Store._find"]:::ext
@@ -263,7 +269,6 @@ flowchart LR
   n_b_ingest_b3_store__manifest_key["b3_store._manifest_key"]:::ext
   n_b_ingest_b4_run_ingest["b4_run.ingest"]:::ext
   n_d_visualization_d2_app__countries["d2_app._countries"]:::ext
-  n_d_visualization_d2_app__data["d2_app._data"]:::ext
   n_d_visualization_d2_app__table_indicators["d2_app._table_indicators"]:::ext
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config__indicator
   n_a_core_a3_indicators_Indicator_parse --> n_a_core_a1_config__indicator
@@ -282,11 +287,6 @@ flowchart LR
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_table_indicators
   n_a_core_a1_config__indicator --> n_a_core_a1_config_load_table_indicators
   n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_table_indicators
-  n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_transformations
-  n_a_core_a1_config_TransformSpec --> n_a_core_a1_config_load_transformations
-  n_a_core_a1_config__indicator --> n_a_core_a1_config_load_transformations
-  n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_transformations
-  n_a_core_a2_schema_Transformation_parse --> n_a_core_a1_config_load_transformations
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_parse_filters
   n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store__find
   n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store_path
@@ -294,22 +294,18 @@ flowchart LR
   n_a_core_a1_config_load_all_series --> n_b_ingest_b4_run_ingest
   n_a_core_a1_config_load_countries --> n_b_ingest_b4_run_ingest
   n_a_core_a1_config_load_countries --> n_d_visualization_d2_app__countries
-  n_a_core_a1_config_load_transformations --> n_d_visualization_d2_app__data
   n_a_core_a1_config_load_table_indicators --> n_d_visualization_d2_app__table_indicators
   click n_a_core_a1_config_ConfigError href "#cls-ConfigError"
   click n_a_core_a1_config_SeriesSpec href "#cls-SeriesSpec"
-  click n_a_core_a1_config_TransformSpec href "#cls-TransformSpec"
   click n_a_core_a1_config__indicator href "#fn-a_core-a1_config-_indicator"
   click n_a_core_a1_config__read_rows href "#fn-a_core-a1_config-_read_rows"
   click n_a_core_a1_config_load_all_series href "#fn-a_core-a1_config-load_all_series"
   click n_a_core_a1_config_load_countries href "#fn-a_core-a1_config-load_countries"
   click n_a_core_a1_config_load_series href "#fn-a_core-a1_config-load_series"
   click n_a_core_a1_config_load_table_indicators href "#fn-a_core-a1_config-load_table_indicators"
-  click n_a_core_a1_config_load_transformations href "#fn-a_core-a1_config-load_transformations"
   click n_a_core_a1_config_parse_filters href "#fn-a_core-a1_config-parse_filters"
   click n_a_core_a1_config_series_files href "#fn-a_core-a1_config-series_files"
   click n_a_core_a1_config_slug href "#fn-a_core-a1_config-slug"
-  click n_a_core_a2_schema_Transformation_parse href "#fn-a_core-a2_schema-Transformation.parse"
   click n_a_core_a3_indicators_Indicator_parse href "#fn-a_core-a3_indicators-Indicator.parse"
   click n_a_core_a4_countries_Country_parse href "#fn-a_core-a4_countries-Country.parse"
   click n_b_ingest_b3_store_Store__find href "#fn-b_ingest-b3_store-Store._find"
@@ -317,57 +313,51 @@ flowchart LR
   click n_b_ingest_b3_store__manifest_key href "#fn-b_ingest-b3_store-_manifest_key"
   click n_b_ingest_b4_run_ingest href "#fn-b_ingest-b4_run-ingest"
   click n_d_visualization_d2_app__countries href "#fn-d_visualization-d2_app-_countries"
-  click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
   click n_d_visualization_d2_app__table_indicators href "#fn-d_visualization-d2_app-_table_indicators"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-a_core-a1_config-slug"></a>**[`slug(indicator: str) -> str`](../src/macroscan/a_core/a1_config.py#L69)** — Filesystem-safe form of an indicator name: 'REAL_GDP' -> 'real_gdp'. Not an identifier.
+- <a id="fn-a_core-a1_config-slug"></a>**[`slug(indicator: str) -> str`](../src/macroscan/a_core/a1_config.py#L60)** — Filesystem-safe form of an indicator name: 'REAL_GDP' -> 'real_gdp'. Not an identifier.
   - returns: `re.sub('[^a-z0-9]+', '_', indicator.l...`: `str`
   - calls: *(none)*
   - called by: [`b3_store.Store._find`](#fn-b_ingest-b3_store-Store._find), [`b3_store.Store.path`](#fn-b_ingest-b3_store-Store.path), [`b3_store._manifest_key`](#fn-b_ingest-b3_store-_manifest_key)
-- <a id="fn-a_core-a1_config-parse_filters"></a>**[`parse_filters(text: str) -> dict[str, tuple[str, ...]]`](../src/macroscan/a_core/a1_config.py#L74)** — Parse 'FREQ=Q;SEX=M+F' into {'FREQ': ('Q',), 'SEX': ('M', 'F')}.
+- <a id="fn-a_core-a1_config-parse_filters"></a>**[`parse_filters(text: str) -> dict[str, tuple[str, ...]]`](../src/macroscan/a_core/a1_config.py#L65)** — Parse 'FREQ=Q;SEX=M+F' into {'FREQ': ('Q',), 'SEX': ('M', 'F')}.
   - returns: `filters`: `dict[str, tuple[str, ...]]`
   - calls: [`ConfigError`](#cls-ConfigError)
   - called by: [`load_series`](#fn-a_core-a1_config-load_series)
-- <a id="fn-a_core-a1_config-_read_rows"></a>**[`_read_rows(path: Path, required: set[str]) -> list[dict[str, str]]`](../src/macroscan/a_core/a1_config.py#L94)** — Read a CSV into stripped dicts, skipping blank and '#'-commented rows.
+- <a id="fn-a_core-a1_config-_read_rows"></a>**[`_read_rows(path: Path, required: set[str]) -> list[dict[str, str]]`](../src/macroscan/a_core/a1_config.py#L85)** — Read a CSV into stripped dicts, skipping blank and '#'-commented rows.
   - returns: `[r for r in rows if any(r.values()) a...`: `list[dict[str, str]]`
   - calls: [`ConfigError`](#cls-ConfigError)
-  - called by: [`load_countries`](#fn-a_core-a1_config-load_countries), [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_indicators`](#fn-a_core-a1_config-load_table_indicators), [`load_transformations`](#fn-a_core-a1_config-load_transformations)
-- <a id="fn-a_core-a1_config-load_countries"></a>**[`load_countries(path: Path) -> list[Country]`](../src/macroscan/a_core/a1_config.py#L108)** — Load the countries to ingest and show, in file order; each must be a defined Country.
+  - called by: [`load_countries`](#fn-a_core-a1_config-load_countries), [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_indicators`](#fn-a_core-a1_config-load_table_indicators)
+- <a id="fn-a_core-a1_config-load_countries"></a>**[`load_countries(path: Path) -> list[Country]`](../src/macroscan/a_core/a1_config.py#L99)** — Load the countries to ingest and show, in file order; each must be a defined Country.
   - returns: `countries`: `list[Country]`
   - calls: [`ConfigError`](#cls-ConfigError), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`a4_countries.Country.parse`](#fn-a_core-a4_countries-Country.parse)
   - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest), [`d2_app._countries`](#fn-d_visualization-d2_app-_countries)
-- <a id="fn-a_core-a1_config-_indicator"></a>**[`_indicator(text: str, where: str) -> Indicator`](../src/macroscan/a_core/a1_config.py#L124)** — The Indicator named `text`, or a ConfigError pointing at `where`.
+- <a id="fn-a_core-a1_config-_indicator"></a>**[`_indicator(text: str, where: str) -> Indicator`](../src/macroscan/a_core/a1_config.py#L115)** — The Indicator named `text`, or a ConfigError pointing at `where`.
   - returns: `Indicator.parse(text)`: `Indicator`
   - calls: [`ConfigError`](#cls-ConfigError), [`a3_indicators.Indicator.parse`](#fn-a_core-a3_indicators-Indicator.parse)
-  - called by: [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_indicators`](#fn-a_core-a1_config-load_table_indicators), [`load_transformations`](#fn-a_core-a1_config-load_transformations)
-- <a id="fn-a_core-a1_config-load_transformations"></a>**[`load_transformations(path: Path) -> list[TransformSpec]`](../src/macroscan/a_core/a1_config.py#L132)** — Load and validate the transformations CSV; both indicators must be defined Indicators.
-  - returns: `specs`: `list[TransformSpec]`
-  - calls: [`ConfigError`](#cls-ConfigError), [`TransformSpec`](#cls-TransformSpec), [`_indicator`](#fn-a_core-a1_config-_indicator), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`a2_schema.Transformation.parse`](#fn-a_core-a2_schema-Transformation.parse)
-  - called by: [`d2_app._data`](#fn-d_visualization-d2_app-_data)
-- <a id="fn-a_core-a1_config-load_table_indicators"></a>**[`load_table_indicators(path: Path) -> list[Indicator]`](../src/macroscan/a_core/a1_config.py#L152)** — Load the indicators the app's table shows, in file order; each must be a defined Indicator.
+  - called by: [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_indicators`](#fn-a_core-a1_config-load_table_indicators)
+- <a id="fn-a_core-a1_config-load_table_indicators"></a>**[`load_table_indicators(path: Path) -> list[Indicator]`](../src/macroscan/a_core/a1_config.py#L123)** — Load the indicators the app's table shows, in file order; each must be a defined Indicator.
   - returns: `shown`: `list[Indicator]`
   - calls: [`ConfigError`](#cls-ConfigError), [`_indicator`](#fn-a_core-a1_config-_indicator), [`_read_rows`](#fn-a_core-a1_config-_read_rows)
   - called by: [`d2_app._table_indicators`](#fn-d_visualization-d2_app-_table_indicators)
-- <a id="fn-a_core-a1_config-load_series"></a>**[`load_series(path: Path, source: str) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L165)** — Load and validate one source's series CSV into SeriesSpecs.
+- <a id="fn-a_core-a1_config-load_series"></a>**[`load_series(path: Path, source: str) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L136)** — Load and validate one source's series CSV into SeriesSpecs.
   - returns: `specs`: `list[SeriesSpec]`
   - calls: [`ConfigError`](#cls-ConfigError), [`SeriesSpec`](#cls-SeriesSpec), [`_indicator`](#fn-a_core-a1_config-_indicator), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`parse_filters`](#fn-a_core-a1_config-parse_filters)
   - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
-- <a id="fn-a_core-a1_config-series_files"></a>**[`series_files(config_dir: Path) -> dict[str, Path]`](../src/macroscan/a_core/a1_config.py#L200)** — Map source name -> its series CSV, e.g. {'oecd': config/02_oecd_indicators.csv}.
+- <a id="fn-a_core-a1_config-series_files"></a>**[`series_files(config_dir: Path) -> dict[str, Path]`](../src/macroscan/a_core/a1_config.py#L171)** — Map source name -> its series CSV, e.g. {'oecd': config/02_oecd_indicators.csv}.
   - returns: `files`: `dict[str, Path]`
   - calls: *(none)*
   - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
-- <a id="fn-a_core-a1_config-load_all_series"></a>**[`load_all_series(config_dir: Path=DEFAULT_CONFIG_DIR) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L210)** — Load every source's series CSV; each (source, indicator, frequency) may appear once.
+- <a id="fn-a_core-a1_config-load_all_series"></a>**[`load_all_series(config_dir: Path=DEFAULT_CONFIG_DIR) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L181)** — Load every source's series CSV; each (source, indicator, frequency) may appear once.
   - returns: `specs`: `list[SeriesSpec]`
   - calls: [`ConfigError`](#cls-ConfigError), [`load_series`](#fn-a_core-a1_config-load_series), [`series_files`](#fn-a_core-a1_config-series_files)
   - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
-- <a id="cls-ConfigError"></a>**[class `ConfigError`](../src/macroscan/a_core/a1_config.py#L35)** — Raised when a config CSV is missing, malformed or inconsistent.
-- <a id="cls-SeriesSpec"></a>**[class `SeriesSpec`](../src/macroscan/a_core/a1_config.py#L40)** — One source's series for an (indicator, frequency): where to fetch it and how to filter it.
-  - <a id="fn-a_core-a1_config-SeriesSpec.label"></a>**[`label(self) -> str`](../src/macroscan/a_core/a1_config.py#L56)** — 'oecd/REAL_GDP/Q', for logs and error messages.
+- <a id="cls-ConfigError"></a>**[class `ConfigError`](../src/macroscan/a_core/a1_config.py#L34)** — Raised when a config CSV is missing, malformed or inconsistent.
+- <a id="cls-SeriesSpec"></a>**[class `SeriesSpec`](../src/macroscan/a_core/a1_config.py#L39)** — One source's series for an (indicator, frequency): where to fetch it and how to filter it.
+  - <a id="fn-a_core-a1_config-SeriesSpec.label"></a>**[`label(self) -> str`](../src/macroscan/a_core/a1_config.py#L55)** — 'oecd/REAL_GDP/Q', for logs and error messages.
     - returns: `f'{self.source}/{self.indicator}/{sel...`: `str`
     - calls: *(none)*
-- <a id="cls-TransformSpec"></a>**[class `TransformSpec`](../src/macroscan/a_core/a1_config.py#L62)** — Derive `new_indicator` by applying `transformation` to each series of `old_indicator`.
 
 ### <a id="mod-a_core-a2_schema"></a>[`a_core.a2_schema`](../src/macroscan/a_core/a2_schema.py)
 
@@ -376,35 +366,51 @@ The canonical long-format table every source produces, plus period helpers.
 ```mermaid
 flowchart LR
   subgraph this["a_core.a2_schema"]
-    n_a_core_a2_schema_Transformation_parse["Transformation.parse"]
+    n_a_core_a2_schema_PeriodInterval_periods_at["PeriodInterval.periods_at"]
     n_a_core_a2_schema_parse_periods["parse_periods"]
+    n_a_core_a2_schema_to_wide["to_wide"]
   end
-  n_a_core_a1_config_load_transformations["a1_config.load_transformations"]:::ext
   n_b_ingest_b1_sources_oecd_normalize["oecd.normalize"]:::ext
   n_b_ingest_b3_store__read["b3_store._read"]:::ext
-  n_a_core_a2_schema_Transformation_parse --> n_a_core_a1_config_load_transformations
+  n_c_transform_c2_transformations_ma["c2_transformations.ma"]:::ext
   n_a_core_a2_schema_parse_periods --> n_b_ingest_b1_sources_oecd_normalize
   n_a_core_a2_schema_parse_periods --> n_b_ingest_b3_store__read
-  click n_a_core_a1_config_load_transformations href "#fn-a_core-a1_config-load_transformations"
-  click n_a_core_a2_schema_Transformation_parse href "#fn-a_core-a2_schema-Transformation.parse"
+  n_a_core_a2_schema_PeriodInterval_periods_at --> n_c_transform_c2_transformations_ma
+  n_a_core_a2_schema_to_wide --> n_c_transform_c2_transformations_ma
+  click n_a_core_a2_schema_PeriodInterval_periods_at href "#fn-a_core-a2_schema-PeriodInterval.periods_at"
   click n_a_core_a2_schema_parse_periods href "#fn-a_core-a2_schema-parse_periods"
+  click n_a_core_a2_schema_to_wide href "#fn-a_core-a2_schema-to_wide"
   click n_b_ingest_b1_sources_oecd_normalize href "#fn-b_ingest-b1_sources-oecd-normalize"
   click n_b_ingest_b3_store__read href "#fn-b_ingest-b3_store-_read"
+  click n_c_transform_c2_transformations_ma href "#fn-c_transform-c2_transformations-ma"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-a_core-a2_schema-parse_periods"></a>**[`parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series`](../src/macroscan/a_core/a2_schema.py#L51)** — Parse period strings ('2024', '2024-Q1', '2024Q1', '2024-03') into a Period Series.
+- <a id="fn-a_core-a2_schema-parse_periods"></a>**[`parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series`](../src/macroscan/a_core/a2_schema.py#L67)** — Parse period strings ('2024', '2024-Q1', '2024Q1', '2024-03') into a Period Series.
   - returns: `pd.Series(pd.PeriodIndex(text, freq=P...`: `pd.Series`
   - calls: *(none)*
   - called by: [`oecd.normalize`](#fn-b_ingest-b1_sources-oecd-normalize), [`b3_store._read`](#fn-b_ingest-b3_store-_read)
-- <a id="fn-a_core-a2_schema-to_wide"></a>**[`to_wide(df: pd.DataFrame, columns: str='country') -> pd.DataFrame`](../src/macroscan/a_core/a2_schema.py#L59)** — Pivot a long frame for one indicator at one frequency into a PeriodIndex x country matrix.
+- <a id="fn-a_core-a2_schema-to_wide"></a>**[`to_wide(df: pd.DataFrame, columns: str='country') -> pd.DataFrame`](../src/macroscan/a_core/a2_schema.py#L75)** — Pivot a long frame for one indicator at one frequency into a PeriodIndex x country matrix.
   - returns: `wide.sort_index()`: `pd.DataFrame`
   - calls: *(none)*
-- <a id="cls-Transformation"></a>**[class `Transformation`](../src/macroscan/a_core/a2_schema.py#L38)** — How a derived indicator is computed from another; the value is the label used in config.
-  - <a id="fn-a_core-a2_schema-Transformation.parse"></a>**[`parse(cls, text: str) -> Transformation`](../src/macroscan/a_core/a2_schema.py#L43)** — Look up a transformation by its config label (case-insensitive).
-    - returns: `t`: `Transformation`
+  - called by: [`c2_transformations.ma`](#fn-c_transform-c2_transformations-ma)
+- <a id="cls-PeriodInterval"></a>**[class `PeriodInterval`](../src/macroscan/a_core/a2_schema.py#L39)** — A span of time, e.g. PeriodInterval.months(12); `periods_at` counts it at one of our frequencies.
+  - <a id="fn-a_core-a2_schema-PeriodInterval.__post_init__"></a>**[`__post_init__(self) -> None`](../src/macroscan/a_core/a2_schema.py#L44)** — *(no docstring)*
+    - returns: *(none)*
     - calls: *(none)*
-    - called by: [`a1_config.load_transformations`](#fn-a_core-a1_config-load_transformations)
+  - <a id="fn-a_core-a2_schema-PeriodInterval.months"></a>**[`months(cls, n: int) -> PeriodInterval`](../src/macroscan/a_core/a2_schema.py#L49)** — *(no docstring)*
+    - returns: `cls(n)`: `PeriodInterval`
+    - calls: *(none)*
+  - <a id="fn-a_core-a2_schema-PeriodInterval.quarters"></a>**[`quarters(cls, n: int) -> PeriodInterval`](../src/macroscan/a_core/a2_schema.py#L53)** — *(no docstring)*
+    - returns: `cls(3 * n)`: `PeriodInterval`
+    - calls: *(none)*
+  - <a id="fn-a_core-a2_schema-PeriodInterval.years"></a>**[`years(cls, n: int) -> PeriodInterval`](../src/macroscan/a_core/a2_schema.py#L57)** — *(no docstring)*
+    - returns: `cls(12 * n)`: `PeriodInterval`
+    - calls: *(none)*
+  - <a id="fn-a_core-a2_schema-PeriodInterval.periods_at"></a>**[`periods_at(self, frequency: str) -> int | None`](../src/macroscan/a_core/a2_schema.py#L60)** — How many `frequency` periods span this interval; None if it isn't a whole number of them.
+    - returns: `whole if rest == 0 else None`: `int | None`
+    - calls: *(none)*
+    - called by: [`c2_transformations.ma`](#fn-c_transform-c2_transformations-ma)
 
 ### <a id="mod-a_core-a3_indicators"></a>[`a_core.a3_indicators`](../src/macroscan/a_core/a3_indicators.py)
 
@@ -416,9 +422,12 @@ flowchart LR
     n_a_core_a3_indicators_Indicator_parse["Indicator.parse"]
   end
   n_a_core_a1_config__indicator["a1_config._indicator"]:::ext
+  n_c_transform_c3_derived_derivation["c3_derived.derivation"]:::ext
   n_a_core_a3_indicators_Indicator_parse --> n_a_core_a1_config__indicator
+  n_a_core_a3_indicators_Indicator_parse --> n_c_transform_c3_derived_derivation
   click n_a_core_a1_config__indicator href "#fn-a_core-a1_config-_indicator"
   click n_a_core_a3_indicators_Indicator_parse href "#fn-a_core-a3_indicators-Indicator.parse"
+  click n_c_transform_c3_derived_derivation href "#fn-c_transform-c3_derived-derivation"
   classDef ext stroke-dasharray: 4 3
 ```
 
@@ -435,7 +444,7 @@ flowchart LR
   - <a id="fn-a_core-a3_indicators-Indicator.parse"></a>**[`parse(cls, text: str) -> Indicator`](../src/macroscan/a_core/a3_indicators.py#L35)** — Look up an indicator by its exact member name, e.g. 'REAL_GDP'.
     - returns: `cls(text)`: `Indicator`
     - calls: *(none)*
-    - called by: [`a1_config._indicator`](#fn-a_core-a1_config-_indicator)
+    - called by: [`a1_config._indicator`](#fn-a_core-a1_config-_indicator), [`c3_derived.derivation`](#fn-c_transform-c3_derived-derivation)
 
 ### <a id="mod-a_core-a4_countries"></a>[`a_core.a4_countries`](../src/macroscan/a_core/a4_countries.py)
 
@@ -957,27 +966,177 @@ flowchart LR
 
 ### <a id="mod-c_transform-c2_transformations"></a>[`c_transform.c2_transformations`](../src/macroscan/c_transform/c2_transformations.py)
 
-Derive new indicators from ingested ones, as configured in 03_transformations.csv.
+Building blocks for derived indicators: pure functions over canonical long frames.
 
 ```mermaid
 flowchart LR
   subgraph this["c_transform.c2_transformations"]
-    n_c_transform_c2_transformations_apply_transformations["apply_transformations"]
+    n_c_transform_c2_transformations__combine["_combine"]
+    n_c_transform_c2_transformations_add["add"]
+    n_c_transform_c2_transformations_ma["ma"]
+    n_c_transform_c2_transformations_ratio_pct["ratio_pct"]
+    n_c_transform_c2_transformations_sub["sub"]
+    n_c_transform_c2_transformations_yoy_pct["yoy_pct"]
   end
+  n_a_core_a2_schema_PeriodInterval_periods_at["a2_schema.PeriodInterval.periods_at"]:::ext
+  n_a_core_a2_schema_to_wide["a2_schema.to_wide"]:::ext
+  n_c_transform_c3_derived_bus_debt_level["c3_derived.bus_debt_level"]:::ext
+  n_c_transform_c3_derived_bus_debt_level_gdp["c3_derived.bus_debt_level_gdp"]:::ext
+  n_c_transform_c3_derived_govt_debt_level_gdp["c3_derived.govt_debt_level_gdp"]:::ext
+  n_c_transform_c3_derived_hh_debt_level_gdp["c3_derived.hh_debt_level_gdp"]:::ext
+  n_c_transform_c3_derived_nominal_growth["c3_derived.nominal_growth"]:::ext
+  n_c_transform_c3_derived_real_growth["c3_derived.real_growth"]:::ext
+  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_add
+  n_a_core_a2_schema_PeriodInterval_periods_at --> n_c_transform_c2_transformations_ma
+  n_a_core_a2_schema_to_wide --> n_c_transform_c2_transformations_ma
+  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_ma
+  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_ratio_pct
+  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_sub
+  n_c_transform_c2_transformations__combine --> n_c_transform_c2_transformations_yoy_pct
+  n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_bus_debt_level
+  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_bus_debt_level_gdp
+  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_hh_debt_level_gdp
+  n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_nominal_growth
+  n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_real_growth
+  click n_a_core_a2_schema_PeriodInterval_periods_at href "#fn-a_core-a2_schema-PeriodInterval.periods_at"
+  click n_a_core_a2_schema_to_wide href "#fn-a_core-a2_schema-to_wide"
+  click n_c_transform_c2_transformations__combine href "#fn-c_transform-c2_transformations-_combine"
+  click n_c_transform_c2_transformations_add href "#fn-c_transform-c2_transformations-add"
+  click n_c_transform_c2_transformations_ma href "#fn-c_transform-c2_transformations-ma"
+  click n_c_transform_c2_transformations_ratio_pct href "#fn-c_transform-c2_transformations-ratio_pct"
+  click n_c_transform_c2_transformations_sub href "#fn-c_transform-c2_transformations-sub"
+  click n_c_transform_c2_transformations_yoy_pct href "#fn-c_transform-c2_transformations-yoy_pct"
+  click n_c_transform_c3_derived_bus_debt_level href "#fn-c_transform-c3_derived-bus_debt_level"
+  click n_c_transform_c3_derived_bus_debt_level_gdp href "#fn-c_transform-c3_derived-bus_debt_level_gdp"
+  click n_c_transform_c3_derived_govt_debt_level_gdp href "#fn-c_transform-c3_derived-govt_debt_level_gdp"
+  click n_c_transform_c3_derived_hh_debt_level_gdp href "#fn-c_transform-c3_derived-hh_debt_level_gdp"
+  click n_c_transform_c3_derived_nominal_growth href "#fn-c_transform-c3_derived-nominal_growth"
+  click n_c_transform_c3_derived_real_growth href "#fn-c_transform-c3_derived-real_growth"
+  classDef ext stroke-dasharray: 4 3
+```
+
+- <a id="fn-c_transform-c2_transformations-yoy_pct"></a>**[`yoy_pct(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L21)** — Y/Y % change per country; periods with no year-earlier value drop out.
+  - returns: `_combine(df, year_ago, lambda now, th...`: `pd.DataFrame`
+  - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
+  - called by: [`c3_derived.nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`c3_derived.real_growth`](#fn-c_transform-c3_derived-real_growth)
+- <a id="fn-c_transform-c2_transformations-ma"></a>**[`ma(df: pd.DataFrame, window: PeriodInterval) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L27)** — Trailing mean over `window` per country; windows spanning a missing period drop out.
+  - returns: `df.iloc[0:0]`, `_combine(df, means, lambda _, mean: m...`: `pd.DataFrame`
+  - calls: [`a2_schema.PeriodInterval.periods_at`](#fn-a_core-a2_schema-PeriodInterval.periods_at), [`a2_schema.to_wide`](#fn-a_core-a2_schema-to_wide), [`_combine`](#fn-c_transform-c2_transformations-_combine)
+- <a id="fn-c_transform-c2_transformations-add"></a>**[`add(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L42)** — a + b per (country, period).
+  - returns: `_combine(a, b, lambda x, y: x + y)`: `pd.DataFrame`
+  - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
+  - called by: [`c3_derived.bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level)
+- <a id="fn-c_transform-c2_transformations-sub"></a>**[`sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L47)** — a - b per (country, period).
+  - returns: `_combine(a, b, lambda x, y: x - y)`: `pd.DataFrame`
+  - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
+- <a id="fn-c_transform-c2_transformations-ratio_pct"></a>**[`ratio_pct(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L52)** — a as a % of b per (country, period).
+  - returns: `_combine(a, b, lambda x, y: x / y * 100)`: `pd.DataFrame`
+  - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
+  - called by: [`c3_derived.bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`c3_derived.govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`c3_derived.hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp)
+- <a id="fn-c_transform-c2_transformations-_combine"></a>**[`_combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Series], pd.Series]) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L57)** — a's rows where b has the same (country, period), with value = op(a, b); NaN results drop out.
+  - returns: `out.dropna(subset=['value']).reset_in...`: `pd.DataFrame`
+  - calls: *(none)*
+  - called by: [`add`](#fn-c_transform-c2_transformations-add), [`ma`](#fn-c_transform-c2_transformations-ma), [`ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`sub`](#fn-c_transform-c2_transformations-sub), [`yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct)
+
+### <a id="mod-c_transform-c3_derived"></a>[`c_transform.c3_derived`](../src/macroscan/c_transform/c3_derived.py)
+
+Derived indicators, defined in code: one recipe per derived Indicator.
+
+```mermaid
+flowchart LR
+  subgraph this["c_transform.c3_derived"]
+    n_c_transform_c3_derived_apply_derivations["apply_derivations"]
+    n_c_transform_c3_derived_bus_debt_level["bus_debt_level"]
+    n_c_transform_c3_derived_bus_debt_level_gdp["bus_debt_level_gdp"]
+    n_c_transform_c3_derived_derivation["derivation"]
+    n_c_transform_c3_derived_derived["derived"]
+    n_c_transform_c3_derived_govt_debt_level_gdp["govt_debt_level_gdp"]
+    n_c_transform_c3_derived_hh_debt_level_gdp["hh_debt_level_gdp"]
+    n_c_transform_c3_derived_nominal_growth["nominal_growth"]
+    n_c_transform_c3_derived_ordered["ordered"]
+    n_c_transform_c3_derived_real_growth["real_growth"]
+  end
+  n_a_core_a3_indicators_Indicator_parse["a3_indicators.Indicator.parse"]:::ext
+  n_c_transform_c2_transformations_add["c2_transformations.add"]:::ext
+  n_c_transform_c2_transformations_ratio_pct["c2_transformations.ratio_pct"]:::ext
+  n_c_transform_c2_transformations_yoy_pct["c2_transformations.yoy_pct"]:::ext
+  n_c_transform_c3_derived_Derivation["c3_derived.Derivation"]:::ext
   n_d_visualization_d2_app__data["d2_app._data"]:::ext
-  n_c_transform_c2_transformations_apply_transformations --> n_d_visualization_d2_app__data
-  click n_c_transform_c2_transformations_apply_transformations href "#fn-c_transform-c2_transformations-apply_transformations"
+  n_c_transform_c3_derived_ordered --> n_c_transform_c3_derived_apply_derivations
+  n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_bus_debt_level
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_bus_debt_level
+  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_bus_debt_level_gdp
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_bus_debt_level_gdp
+  n_a_core_a3_indicators_Indicator_parse --> n_c_transform_c3_derived_derivation
+  n_c_transform_c3_derived_Derivation --> n_c_transform_c3_derived_derivation
+  n_c_transform_c3_derived_derivation --> n_c_transform_c3_derived_derived
+  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c2_transformations_ratio_pct --> n_c_transform_c3_derived_hh_debt_level_gdp
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_hh_debt_level_gdp
+  n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_nominal_growth
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_nominal_growth
+  n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_real_growth
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_real_growth
+  n_c_transform_c3_derived_apply_derivations --> n_d_visualization_d2_app__data
+  click n_a_core_a3_indicators_Indicator_parse href "#fn-a_core-a3_indicators-Indicator.parse"
+  click n_c_transform_c2_transformations_add href "#fn-c_transform-c2_transformations-add"
+  click n_c_transform_c2_transformations_ratio_pct href "#fn-c_transform-c2_transformations-ratio_pct"
+  click n_c_transform_c2_transformations_yoy_pct href "#fn-c_transform-c2_transformations-yoy_pct"
+  click n_c_transform_c3_derived_Derivation href "#cls-Derivation"
+  click n_c_transform_c3_derived_apply_derivations href "#fn-c_transform-c3_derived-apply_derivations"
+  click n_c_transform_c3_derived_bus_debt_level href "#fn-c_transform-c3_derived-bus_debt_level"
+  click n_c_transform_c3_derived_bus_debt_level_gdp href "#fn-c_transform-c3_derived-bus_debt_level_gdp"
+  click n_c_transform_c3_derived_derivation href "#fn-c_transform-c3_derived-derivation"
+  click n_c_transform_c3_derived_derived href "#fn-c_transform-c3_derived-derived"
+  click n_c_transform_c3_derived_govt_debt_level_gdp href "#fn-c_transform-c3_derived-govt_debt_level_gdp"
+  click n_c_transform_c3_derived_hh_debt_level_gdp href "#fn-c_transform-c3_derived-hh_debt_level_gdp"
+  click n_c_transform_c3_derived_nominal_growth href "#fn-c_transform-c3_derived-nominal_growth"
+  click n_c_transform_c3_derived_ordered href "#fn-c_transform-c3_derived-ordered"
+  click n_c_transform_c3_derived_real_growth href "#fn-c_transform-c3_derived-real_growth"
   click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-c_transform-c2_transformations-yoy_pct"></a>**[`yoy_pct(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L19)** — Y/Y % change of one country's series at one frequency; periods with no year-earlier value drop out.
-  - returns: `df.set_index('period').loc[change.ind...`: `pd.DataFrame`
+- <a id="fn-c_transform-c3_derived-derivation"></a>**[`derivation(func: Callable[..., pd.DataFrame], unit: str | None=None) -> Derivation`](../src/macroscan/c_transform/c3_derived.py#L37)** — A Derivation read off `func`: its name and parameter names must be lower-cased Indicators.
+  - returns: `Derivation(indicator, inputs, func, u...`: `Derivation`
+  - calls: [`a3_indicators.Indicator.parse`](#fn-a_core-a3_indicators-Indicator.parse), [`Derivation`](#cls-Derivation)
+  - called by: [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-derived"></a>**[`derived(*, unit: str | None=None) -> Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]`](../src/macroscan/c_transform/c3_derived.py#L46)** — Decorator: register the function in DERIVED as the recipe for the Indicator it is named after.
+  - returns: `register`: `Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]`
+  - calls: [`derivation`](#fn-c_transform-c3_derived-derivation)
+  - called by: [`bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level), [`bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp), [`nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`real_growth`](#fn-c_transform-c3_derived-real_growth)
+- <a id="fn-c_transform-c3_derived-ordered"></a>**[`ordered(derivations: dict[Indicator, Derivation]=DERIVED) -> list[Derivation]`](../src/macroscan/c_transform/c3_derived.py#L57)** — The derivations, each after any it builds on; raises graphlib.CycleError on a cycle.
+  - returns: `[derivations[i] for i in TopologicalS...`: `list[Derivation]`
   - calls: *(none)*
-- <a id="fn-c_transform-c2_transformations-apply_transformations"></a>**[`apply_transformations(data: dict[str, pd.DataFrame], specs: list[TransformSpec]) -> dict[str, pd.DataFrame]`](../src/macroscan/c_transform/c2_transformations.py#L33)** — `data` ({frequency: long frame}) plus each spec's derived indicator; inputs are not modified.
+  - called by: [`apply_derivations`](#fn-c_transform-c3_derived-apply_derivations)
+- <a id="fn-c_transform-c3_derived-lineage"></a>**[`lineage(indicator: Indicator, derivations: dict[Indicator, Derivation]=DERIVED) -> dict[Indicator, dict]`](../src/macroscan/c_transform/c3_derived.py#L63)** — `indicator`'s inputs as a nested {input: its inputs} tree; non-derived inputs are leaves ({}).
+  - returns: `{} if d is None else {i: lineage(i, d...`: `dict[Indicator, dict]`
+  - calls: *(none)*
+- <a id="fn-c_transform-c3_derived-apply_derivations"></a>**[`apply_derivations(data: dict[str, pd.DataFrame], derivations: dict[Indicator, Derivation]=DERIVED) -> dict[str, pd.DataFrame]`](../src/macroscan/c_transform/c3_derived.py#L69)** — `data` ({frequency: long frame}) plus each derived indicator; inputs are not modified.
   - returns: `out`: `dict[str, pd.DataFrame]`
-  - calls: *(none)*
+  - calls: [`ordered`](#fn-c_transform-c3_derived-ordered)
   - called by: [`d2_app._data`](#fn-d_visualization-d2_app-_data)
+- <a id="fn-c_transform-c3_derived-real_growth"></a>**[`real_growth(real_gdp)`](../src/macroscan/c_transform/c3_derived.py#L98)** — *(no docstring)*
+  - returns: `yoy_pct(real_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-nominal_growth"></a>**[`nominal_growth(nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L103)** — *(no docstring)*
+  - returns: `yoy_pct(nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-bus_debt_level"></a>**[`bus_debt_level(bus_loans, bus_debt_securities)`](../src/macroscan/c_transform/c3_derived.py#L108)** — *(no docstring)*
+  - returns: `add(bus_loans, bus_debt_securities)`: *(unannotated)*
+  - calls: [`c2_transformations.add`](#fn-c_transform-c2_transformations-add), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-hh_debt_level_gdp"></a>**[`hh_debt_level_gdp(hh_debt_level, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L114)** — *(no docstring)*
+  - returns: `ratio_pct(hh_debt_level, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-bus_debt_level_gdp"></a>**[`bus_debt_level_gdp(bus_debt_level, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L119)** — *(no docstring)*
+  - returns: `ratio_pct(bus_debt_level, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-govt_debt_level_gdp"></a>**[`govt_debt_level_gdp(govt_debt_level, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L124)** — *(no docstring)*
+  - returns: `ratio_pct(govt_debt_level, nominal_gdp)`: *(unannotated)*
+  - calls: [`c2_transformations.ratio_pct`](#fn-c_transform-c2_transformations-ratio_pct), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="cls-Derivation"></a>**[class `Derivation`](../src/macroscan/c_transform/c3_derived.py#L26)** — How `indicator` is computed: `func` called with one long frame per input, by lower-cased name.
 
 ### <a id="mod-d_visualization-d1_frames"></a>[`d_visualization.d1_frames`](../src/macroscan/d_visualization/d1_frames.py)
 
@@ -1048,16 +1207,14 @@ flowchart LR
   end
   n_a_core_a1_config_load_countries["a1_config.load_countries"]:::ext
   n_a_core_a1_config_load_table_indicators["a1_config.load_table_indicators"]:::ext
-  n_a_core_a1_config_load_transformations["a1_config.load_transformations"]:::ext
   n_c_transform_c1_load_load_ingested["c1_load.load_ingested"]:::ext
-  n_c_transform_c2_transformations_apply_transformations["c2_transformations.apply_transformations"]:::ext
+  n_c_transform_c3_derived_apply_derivations["c3_derived.apply_derivations"]:::ext
   n_d_visualization_d1_frames_chart_series["d1_frames.chart_series"]:::ext
   n_d_visualization_d1_frames_latest_table["d1_frames.latest_table"]:::ext
   n_d_visualization_d1_frames_series_label["d1_frames.series_label"]:::ext
   n_a_core_a1_config_load_countries --> n_d_visualization_d2_app__countries
-  n_a_core_a1_config_load_transformations --> n_d_visualization_d2_app__data
   n_c_transform_c1_load_load_ingested --> n_d_visualization_d2_app__data
-  n_c_transform_c2_transformations_apply_transformations --> n_d_visualization_d2_app__data
+  n_c_transform_c3_derived_apply_derivations --> n_d_visualization_d2_app__data
   n_a_core_a1_config_load_table_indicators --> n_d_visualization_d2_app__table_indicators
   n_d_visualization_d1_frames_chart_series --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_latest_table --> n_d_visualization_d2_app_main
@@ -1068,9 +1225,8 @@ flowchart LR
   n_d_visualization_d2_app__table_indicators --> n_d_visualization_d2_app_main
   click n_a_core_a1_config_load_countries href "#fn-a_core-a1_config-load_countries"
   click n_a_core_a1_config_load_table_indicators href "#fn-a_core-a1_config-load_table_indicators"
-  click n_a_core_a1_config_load_transformations href "#fn-a_core-a1_config-load_transformations"
   click n_c_transform_c1_load_load_ingested href "#fn-c_transform-c1_load-load_ingested"
-  click n_c_transform_c2_transformations_apply_transformations href "#fn-c_transform-c2_transformations-apply_transformations"
+  click n_c_transform_c3_derived_apply_derivations href "#fn-c_transform-c3_derived-apply_derivations"
   click n_d_visualization_d1_frames_chart_series href "#fn-d_visualization-d1_frames-chart_series"
   click n_d_visualization_d1_frames_latest_table href "#fn-d_visualization-d1_frames-latest_table"
   click n_d_visualization_d1_frames_series_label href "#fn-d_visualization-d1_frames-series_label"
@@ -1082,23 +1238,23 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L33)** — Ingested data plus configured derived indicators, built once per session.
-  - returns: `apply_transformations(load_ingested(D...`: `dict[str, pd.DataFrame]`
-  - calls: [`a1_config.load_transformations`](#fn-a_core-a1_config-load_transformations), [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested), [`c2_transformations.apply_transformations`](#fn-c_transform-c2_transformations-apply_transformations)
+- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L31)** — Ingested data plus the derived indicators, built once per session.
+  - returns: `apply_derivations(load_ingested(DEFAU...`: `dict[str, pd.DataFrame]`
+  - calls: [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested), [`c3_derived.apply_derivations`](#fn-c_transform-c3_derived-apply_derivations)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L40)** — Country codes in config order.
+- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L37)** — Country codes in config order.
   - returns: `load_countries(DEFAULT_CONFIG_DIR / C...`: `list[str]`
   - calls: [`a1_config.load_countries`](#fn-a_core-a1_config-load_countries)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_table_indicators"></a>**[`_table_indicators() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L46)** — Indicators shown in the table, from config.
+- <a id="fn-d_visualization-d2_app-_table_indicators"></a>**[`_table_indicators() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L43)** — Indicators shown in the table, from config.
   - returns: `load_table_indicators(DEFAULT_CONFIG_...`: `list[str]`
   - calls: [`a1_config.load_table_indicators`](#fn-a_core-a1_config-load_table_indicators)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_color"></a>**[`_color(label: str, picks: list[str]) -> str`](../src/macroscan/d_visualization/d2_app.py#L51)** — The color for a charted series: its existing one, else the first palette color nobody is using.
+- <a id="fn-d_visualization-d2_app-_color"></a>**[`_color(label: str, picks: list[str]) -> str`](../src/macroscan/d_visualization/d2_app.py#L48)** — The color for a charted series: its existing one, else the first palette color nobody is using.
   - returns: `colors[label]`: `str`
   - calls: *(none)*
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L62)** — Render the table and the chart of picked cells.
+- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L59)** — Render the table and the chart of picked cells.
   - returns: *(none)*
   - calls: [`d1_frames.chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d1_frames.latest_table`](#fn-d_visualization-d1_frames-latest_table), [`d1_frames.series_label`](#fn-d_visualization-d1_frames-series_label), [`_color`](#fn-d_visualization-d2_app-_color), [`_countries`](#fn-d_visualization-d2_app-_countries), [`_data`](#fn-d_visualization-d2_app-_data), [`_table_indicators`](#fn-d_visualization-d2_app-_table_indicators)
 

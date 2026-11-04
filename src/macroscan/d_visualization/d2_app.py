@@ -12,14 +12,12 @@ from macroscan.a_core.a1_config import (
     COUNTRIES_FILE,
     DEFAULT_CONFIG_DIR,
     TABLE_FILE,
-    TRANSFORMATIONS_FILE,
     load_countries,
     load_table_indicators,
-    load_transformations,
 )
 from macroscan.b_ingest.b3_store import DEFAULT_ROOT
 from macroscan.c_transform.c1_load import load_ingested
-from macroscan.c_transform.c2_transformations import apply_transformations
+from macroscan.c_transform.c3_derived import apply_derivations
 from macroscan.d_visualization.d1_frames import chart_series, latest_table, series_label
 
 # A series keeps its color while charted; a removed series frees its color for the next one added.
@@ -31,9 +29,8 @@ COLORS_KEY = "colors"  # charted label -> palette color
 
 @st.cache_data
 def _data() -> dict[str, pd.DataFrame]:
-    """Ingested data plus configured derived indicators, built once per session."""
-    specs = load_transformations(DEFAULT_CONFIG_DIR / TRANSFORMATIONS_FILE)
-    return apply_transformations(load_ingested(DEFAULT_ROOT), specs)
+    """Ingested data plus the derived indicators, built once per session."""
+    return apply_derivations(load_ingested(DEFAULT_ROOT))
 
 
 @st.cache_data
