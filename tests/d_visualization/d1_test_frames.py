@@ -21,6 +21,7 @@ from macroscan.d_visualization.d1_frames import (
     latest_table,
     level_of,
     outline,
+    row_shades,
     unindent,
     visible,
 )
@@ -115,6 +116,17 @@ def test_is_percent_row():
     """Rows whose indicator label has a '%' are percents, including '% GDP' ratios."""
     assert is_percent_row("Unemployment (%) (M)") and is_percent_row("HH Debt Level % GDP (Q)")
     assert not is_percent_row("Real GDP (Q)")
+
+
+def test_row_shades():
+    """The row's min is white and its max full blue; empty cells and flat rows are unshaded."""
+    shades = row_shades(pd.Series([1.0, 3.0, np.nan, 2.0]))
+    assert shades[0].startswith("background-color: rgb(255, 255, 255)")
+    assert shades[1].startswith("background-color: rgb(90, 150, 230)")
+    assert shades[2] == ""
+    assert shades[3].startswith("background-color: rgb(172, 202, 242)")
+    assert row_shades(pd.Series([2.0, 2.0, np.nan])) == ["", "", ""]
+    assert row_shades(pd.Series([np.nan, np.nan])) == ["", ""]
 
 
 def outlined():

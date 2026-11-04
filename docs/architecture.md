@@ -1336,47 +1336,50 @@ flowchart LR
   - returns: `'%' in row`: `bool`
   - calls: *(none)*
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-indent"></a>**[`indent(label: str, level: int) -> str`](../src/macroscan/d_visualization/d1_frames.py#L36)** — A table label shown `level` steps into the outline.
+- <a id="fn-d_visualization-d1_frames-row_shades"></a>**[`row_shades(values: pd.Series) -> list[str]`](../src/macroscan/d_visualization/d1_frames.py#L40)** — CSS per cell of one table row: white-to-blue by where each value sits between the row's min and max.
+  - returns: `[''] * len(values)`, `styles`: `list[str]`
+  - calls: *(none)*
+- <a id="fn-d_visualization-d1_frames-indent"></a>**[`indent(label: str, level: int) -> str`](../src/macroscan/d_visualization/d1_frames.py#L59)** — A table label shown `level` steps into the outline.
   - returns: `INDENT * level + label`: `str`
   - calls: *(none)*
   - called by: [`header_labels`](#fn-d_visualization-d1_frames-header_labels), [`latest_table`](#fn-d_visualization-d1_frames-latest_table)
-- <a id="fn-d_visualization-d1_frames-unindent"></a>**[`unindent(label: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L41)** — A table label without its outline indent (an INPUT mark stays).
+- <a id="fn-d_visualization-d1_frames-unindent"></a>**[`unindent(label: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L64)** — A table label without its outline indent (an INPUT mark stays).
   - returns: `label.lstrip('\xa0')`: `str`
   - calls: *(none)*
   - called by: [`base_label`](#fn-d_visualization-d1_frames-base_label), [`level_of`](#fn-d_visualization-d1_frames-level_of), [`outline`](#fn-d_visualization-d1_frames-outline), [`visible`](#fn-d_visualization-d1_frames-visible)
-- <a id="fn-d_visualization-d1_frames-base_label"></a>**[`base_label(label: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L46)** — A table label without indent or INPUT mark, as `row_label` gives it and `chart_series` takes it.
+- <a id="fn-d_visualization-d1_frames-base_label"></a>**[`base_label(label: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L69)** — A table label without indent or INPUT mark, as `row_label` gives it and `chart_series` takes it.
   - returns: `unindent(label).removeprefix(INPUT)`: `str`
   - calls: [`unindent`](#fn-d_visualization-d1_frames-unindent)
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-header_labels"></a>**[`header_labels(layout: list[TableRow]) -> list[str]`](../src/macroscan/d_visualization/d1_frames.py#L51)** — The table labels of the layout's header rows, as `latest_table` shows them.
+- <a id="fn-d_visualization-d1_frames-header_labels"></a>**[`header_labels(layout: list[TableRow]) -> list[str]`](../src/macroscan/d_visualization/d1_frames.py#L74)** — The table labels of the layout's header rows, as `latest_table` shows them.
   - returns: `[indent(r.header, r.level) for r in l...`: `list[str]`
   - calls: [`indent`](#fn-d_visualization-d1_frames-indent)
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-latest_table"></a>**[`latest_table(data: dict[str, pd.DataFrame], countries: list[str], layout: list[TableRow] | None=None, inputs: Mapping[Indicator, tuple[Indicator, ...]] | None=None) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L56)** — Last value per indicator (rows) and country (columns, in `countries` order).
+- <a id="fn-d_visualization-d1_frames-latest_table"></a>**[`latest_table(data: dict[str, pd.DataFrame], countries: list[str], layout: list[TableRow] | None=None, inputs: Mapping[Indicator, tuple[Indicator, ...]] | None=None) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L79)** — Last value per indicator (rows) and country (columns, in `countries` order).
   - returns: `wide.sort_index()`, `table`: `pd.DataFrame`
   - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled), [`indent`](#fn-d_visualization-d1_frames-indent), [`row_label`](#fn-d_visualization-d1_frames-row_label)
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-level_of"></a>**[`level_of(label: str) -> int`](../src/macroscan/d_visualization/d1_frames.py#L126)** — A table label's outline depth: how many INDENTs it starts with.
+- <a id="fn-d_visualization-d1_frames-level_of"></a>**[`level_of(label: str) -> int`](../src/macroscan/d_visualization/d1_frames.py#L149)** — A table label's outline depth: how many INDENTs it starts with.
   - returns: `(len(label) - len(unindent(label))) /...`: `int`
   - calls: [`unindent`](#fn-d_visualization-d1_frames-unindent)
   - called by: [`outline`](#fn-d_visualization-d1_frames-outline)
-- <a id="fn-d_visualization-d1_frames-outline"></a>**[`outline(table: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L131)** — Per table row (same index, same order): `level`, `path`, `has_children`, `is_input` and `has_inputs`.
+- <a id="fn-d_visualization-d1_frames-outline"></a>**[`outline(table: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L154)** — Per table row (same index, same order): `level`, `path`, `has_children`, `is_input` and `has_inputs`.
   - returns: `pd.DataFrame({'level': levels, 'path'...`: `pd.DataFrame`
   - calls: [`level_of`](#fn-d_visualization-d1_frames-level_of), [`unindent`](#fn-d_visualization-d1_frames-unindent)
   - called by: [`visible`](#fn-d_visualization-d1_frames-visible), [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-_shown"></a>**[`_shown(rows: pd.DataFrame, collapsed: set[str]) -> list[bool]`](../src/macroscan/d_visualization/d1_frames.py#L152)** — Per outline row, whether it shows: not under a collapsed row (collapsed rows themselves show).
+- <a id="fn-d_visualization-d1_frames-_shown"></a>**[`_shown(rows: pd.DataFrame, collapsed: set[str]) -> list[bool]`](../src/macroscan/d_visualization/d1_frames.py#L175)** — Per outline row, whether it shows: not under a collapsed row (collapsed rows themselves show).
   - returns: `keep`: `list[bool]`
   - calls: *(none)*
   - called by: [`visible`](#fn-d_visualization-d1_frames-visible)
-- <a id="fn-d_visualization-d1_frames-visible"></a>**[`visible(table: pd.DataFrame, collapsed: set[str]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L174)** — The table without the rows under any collapsed path, plus their outline columns.
+- <a id="fn-d_visualization-d1_frames-visible"></a>**[`visible(table: pd.DataFrame, collapsed: set[str]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L197)** — The table without the rows under any collapsed path, plus their outline columns.
   - returns: `table.assign(**{c: rows[c].to_numpy()...`: `pd.DataFrame`
   - calls: [`_shown`](#fn-d_visualization-d1_frames-_shown), [`outline`](#fn-d_visualization-d1_frames-outline), [`unindent`](#fn-d_visualization-d1_frames-unindent)
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-chart_series"></a>**[`chart_series(data: dict[str, pd.DataFrame], picks: list[tuple[str, str]]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L190)** — One column per (row label, country) pick, indexed by timestamp; frequencies are outer-joined.
+- <a id="fn-d_visualization-d1_frames-chart_series"></a>**[`chart_series(data: dict[str, pd.DataFrame], picks: list[tuple[str, str]]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L213)** — One column per (row label, country) pick, indexed by timestamp; frequencies are outer-joined.
   - returns: `chart`: `pd.DataFrame`
   - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled), [`series_label`](#fn-d_visualization-d1_frames-series_label)
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-_labelled"></a>**[`_labelled(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L208)** — A long frame with its table row label added.
+- <a id="fn-d_visualization-d1_frames-_labelled"></a>**[`_labelled(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L231)** — A long frame with its table row label added.
   - returns: `df.assign(row=[row_label(i, f) for i,...`: `pd.DataFrame`
   - calls: [`row_label`](#fn-d_visualization-d1_frames-row_label)
   - called by: [`chart_series`](#fn-d_visualization-d1_frames-chart_series), [`latest_table`](#fn-d_visualization-d1_frames-latest_table)
@@ -1439,23 +1442,23 @@ flowchart LR
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L45)** — Ingested data plus the derived indicators, built once per session.
+- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L46)** — Ingested data plus the derived indicators, built once per session.
   - returns: `apply_derivations(load_ingested(DEFAU...`: `dict[str, pd.DataFrame]`
   - calls: [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested), [`c3_derived.apply_derivations`](#fn-c_transform-c3_derived-apply_derivations)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L50)** — Country codes in definition order.
+- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L51)** — Country codes in definition order.
   - returns: `list(Country)`: `list[str]`
   - calls: *(none)*
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_table_layout"></a>**[`_table_layout() -> list[TableRow]`](../src/macroscan/d_visualization/d2_app.py#L56)** — The table's outline of section headers and indicators, from config.
+- <a id="fn-d_visualization-d2_app-_table_layout"></a>**[`_table_layout() -> list[TableRow]`](../src/macroscan/d_visualization/d2_app.py#L57)** — The table's outline of section headers and indicators, from config.
   - returns: `load_table_layout(DEFAULT_CONFIG_DIR ...`: `list[TableRow]`
   - calls: [`a1_config.load_table_layout`](#fn-a_core-a1_config-load_table_layout)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_color"></a>**[`_color(label: str, picks: list[str]) -> str`](../src/macroscan/d_visualization/d2_app.py#L61)** — The color for a charted series: its existing one, else the first palette color nobody is using.
+- <a id="fn-d_visualization-d2_app-_color"></a>**[`_color(label: str, picks: list[str]) -> str`](../src/macroscan/d_visualization/d2_app.py#L62)** — The color for a charted series: its existing one, else the first palette color nobody is using.
   - returns: `colors[label]`: `str`
   - calls: *(none)*
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L72)** — Render the table and the chart of picked cells.
+- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L73)** — Render the table and the chart of picked cells.
   - returns: *(none)*
   - calls: [`d1_frames.base_label`](#fn-d_visualization-d1_frames-base_label), [`d1_frames.chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d1_frames.header_labels`](#fn-d_visualization-d1_frames-header_labels), [`d1_frames.is_percent_row`](#fn-d_visualization-d1_frames-is_percent_row), [`d1_frames.latest_table`](#fn-d_visualization-d1_frames-latest_table), [`d1_frames.outline`](#fn-d_visualization-d1_frames-outline), [`d1_frames.series_label`](#fn-d_visualization-d1_frames-series_label), [`d1_frames.visible`](#fn-d_visualization-d1_frames-visible), [`_color`](#fn-d_visualization-d2_app-_color), [`_countries`](#fn-d_visualization-d2_app-_countries), [`_data`](#fn-d_visualization-d2_app-_data), [`_table_layout`](#fn-d_visualization-d2_app-_table_layout)
 

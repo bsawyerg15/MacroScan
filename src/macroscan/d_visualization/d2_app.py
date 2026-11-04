@@ -25,6 +25,7 @@ from macroscan.d_visualization.d1_frames import (
     is_percent_row,
     latest_table,
     outline,
+    row_shades,
     series_label,
     visible,
 )
@@ -145,6 +146,7 @@ def main() -> None:
     styled = (
         view.style.format("{:.2%}", subset=pd.IndexSlice[percent, countries], na_rep="")
         .format("{:,.2f}", subset=pd.IndexSlice[other, countries], na_rep="")
+        .apply(row_shades, axis=1, subset=countries)  # each row shaded between its own min and max
         .apply(lambda row: [row_style[row.name]] * len(row), axis=1)
     )
     st.dataframe(

@@ -33,6 +33,29 @@ def is_percent_row(row: str) -> bool:
     return "%" in row
 
 
+SHADE_LOW, SHADE_HIGH = (255, 255, 255), (90, 150, 230)  # white at a row's min, blue at its max
+SHADE_TEXT = "#000000"  # dark text stays readable on the light shades, in either theme
+
+
+def row_shades(values: pd.Series) -> list[str]:
+    """CSS per cell of one table row: white-to-blue by where each value sits between the row's min and max.
+
+    Empty cells, and rows with fewer than two distinct values, get no shading.
+    """
+    low, high = values.min(), values.max()
+    if pd.isna(low) or low == high:
+        return [""] * len(values)
+    styles = []
+    for v in values:
+        if pd.isna(v):
+            styles.append("")
+            continue
+        t = (v - low) / (high - low)
+        r, g, b = (round(a + (z - a) * t) for a, z in zip(SHADE_LOW, SHADE_HIGH))
+        styles.append(f"background-color: rgb({r}, {g}, {b}); color: {SHADE_TEXT}")
+    return styles
+
+
 def indent(label: str, level: int) -> str:
     """A table label shown `level` steps into the outline."""
     return INDENT * level + label
@@ -210,4 +233,4 @@ def _labelled(df: pd.DataFrame) -> pd.DataFrame:
     return df.assign(row=[row_label(i, f) for i, f in zip(df["indicator"], df["frequency"])])
 
 
-__all__ = ["INDENT", "INPUT", "base_label", "row_label", "series_label", "is_percent_row", "indent", "unindent", "header_labels", "PATH_SEP", "level_of", "outline", "visible", "latest_table", "chart_series"]
+__all__ = ["INDENT", "INPUT", "base_label", "row_label", "series_label", "is_percent_row", "row_shades", "indent", "unindent", "header_labels", "PATH_SEP", "level_of", "outline", "visible", "latest_table", "chart_series"]
