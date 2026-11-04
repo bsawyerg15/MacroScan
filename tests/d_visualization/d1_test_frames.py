@@ -9,12 +9,20 @@ from macroscan.a_core.a3_indicators import Indicator
 from macroscan.b_ingest.b3_store import Store
 from macroscan.c_transform.c1_load import load_ingested
 from macroscan.d_visualization.d1_frames import (
+    COLLAPSED,
+    EXPANDED,
     INDENT,
+    INPUT,
+    LEAF,
+    base_label,
     chart_series,
     header_labels,
     is_percent_row,
     latest_table,
+    level_of,
+    outline,
     unindent,
+    visible,
 )
 
 T1 = datetime(2026, 1, 15, tzinfo=timezone.utc)
@@ -107,3 +115,93 @@ def test_is_percent_row():
     """Rows whose indicator label has a '%' are percents, including '% GDP' ratios."""
     assert is_percent_row("Unemployment (%) (M)") and is_percent_row("HH Debt Level % GDP (Q)")
     assert not is_percent_row("Real GDP (Q)")
+
+
+def outlined():
+    """A table shaped like the app's: headers, a nested header, and an indicator with a child."""
+    labels = ["Output", INDENT + "Real Growth (%) (Q)", INDENT * 2 + "PGDP Growth (%) (A)", INDENT + "Unemployment (%) (M)",
+              "Debt", INDENT + "Levels", INDENT * 2 + "HH", INDENT + "Flows", INDENT * 2 + "HH", "Assets", INDENT + "Gold"]
+    return pd.DataFrame({"USA": range(len(labels))}, index=pd.Index(labels, name="indicator"), dtype=float)
+
+
+def test_outline():
+    """Paths follow ancestry, so a repeated label under two parents stays distinct; parents have deeper rows next."""
+    rows = outline(outlined())
+    assert rows["level"].tolist() == [0, 1, 2, 1, 0, 1, 2, 1, 2, 0, 1]
+    assert rows["path"].iloc[2] == "Output › Real Growth (%) (Q) › PGDP Growth (%) (A)"
+    assert rows["path"].iloc[6] == "Debt › Levels › HH" and rows["path"].iloc[8] == "Debt › Flows › HH"
+    assert rows["has_children"].tolist() == [True, True, False, False, True, True, False, True, False, True, False]
+    assert level_of(INDENT * 2 + "x") == 2
+
+
+def shown_labels(collapsed):
+    return [unindent(label) for label in visible(outlined(), collapsed).index]
+
+
+def test_visible():
+    """A collapsed row stays but its whole subtree goes; siblings and other sections stay."""
+    assert len(shown_labels(set())) == 11
+    assert shown_labels({"Debt"}) == ["Output", "Real Growth (%) (Q)", "PGDP Growth (%) (A)", "Unemployment (%) (M)", "Debt", "Assets", "Gold"]
+    assert shown_labels({"Debt › Levels"}) == [
+        "Output", "Real Growth (%) (Q)", "PGDP Growth (%) (A)", "Unemployment (%) (M)", "Debt", "Levels", "Flows", "HH", "Assets", "Gold"
+    ]
+    assert "PGDP Growth (%) (A)" not in shown_labels({"Output › Real Growth (%) (Q)"})
+    assert shown_labels({"Output", "Debt", "Assets"}) == ["Output", "Debt", "Assets"]
+
+
+def test_visible_display_labels():
+    """Parents get ▾ (or ▸ when collapsed, even though their children are hidden); leaves get a gap."""
+    display = visible(outlined(), {"Debt"})["display"].tolist()
+    assert display[0] == EXPANDED + "Output"
+    assert display[1] == INDENT + EXPANDED + "Real Growth (%) (Q)"
+    assert display[2] == INDENT * 2 + LEAF + "PGDP Growth (%) (A)"
+    assert display[4] == COLLAPSED + "Debt"
+
+
+def test_latest_table_provenance():
+    """Each layout indicator is followed by its inputs, recursively, valued at the parent cell's period."""
+    q = pd.concat([
+        frame(Indicator.REAL_GDP, "Q", [("USA", "2025Q1", 1.0), ("USA", "2025Q2", 2.0), ("DEU", "2025Q1", 5.0)]),
+        frame(Indicator.REAL_GROWTH, "Q", [("USA", "2025Q1", 0.1)]),  # latest is Q1, though GDP has Q2
+        frame(Indicator.NOMINAL_GDP, "Q", [("USA", "2025Q1", 9.0)]),
+    ], ignore_index=True)
+    inputs = {Indicator.REAL_GROWTH: (Indicator.REAL_GDP,), Indicator.REAL_GDP: (Indicator.NOMINAL_GDP,)}
+    layout = [TableRow(0, header="Output"), TableRow(1, indicator=Indicator.REAL_GROWTH)]
+    table = latest_table({"Q": q}, ["USA", "DEU"], layout, inputs)
+    assert list(table.index) == [
+        "Output",
+        INDENT + "Real Growth (%) (Q)",
+        INDENT * 2 + INPUT + "Real GDP (Q)",
+        INDENT * 3 + INPUT + "Nominal GDP (Q)",
+    ]
+    assert table.iloc[2]["USA"] == 1.0  # the 2025Q1 value the growth cell used, not the latest 2.0
+    assert np.isnan(table.iloc[2]["DEU"])  # no growth cell for DEU, so no input period
+    assert table.iloc[3]["USA"] == 9.0
+    assert base_label(table.index[2]) == "Real GDP (Q)"
+
+
+def provenance_table():
+    """Real Growth with an input (which has its own input) and a configured child that has an input."""
+    labels = ["Output", INDENT + "Real Growth (%) (Q)", INDENT * 2 + INPUT + "Real GDP (Q)",
+              INDENT * 3 + INPUT + "Nominal GDP (Q)", INDENT * 2 + "PGDP Growth (%) (Q)",
+              INDENT * 3 + INPUT + "Real Potential GDP (Q)", INDENT + "Unemployment (%) (M)"]
+    return pd.DataFrame({"USA": range(len(labels))}, index=pd.Index(labels, name="indicator"), dtype=float)
+
+
+def test_outline_inputs():
+    """Rows whose first child is an input have inputs; input rows are flagged."""
+    rows = outline(provenance_table())
+    assert rows["is_input"].tolist() == [False, False, True, True, False, True, False]
+    assert rows["has_inputs"].tolist() == [False, True, True, False, True, False, False]
+
+
+def test_visible_folds_only_inputs():
+    """Folding a row with inputs hides just its inputs; configured children and their own inputs stay as set."""
+    base = "Output › Real Growth (%) (Q)"
+    names = lambda collapsed: [base_label(label) for label in visible(provenance_table(), collapsed).index]
+    assert names({base}) == ["Output", "Real Growth (%) (Q)", "PGDP Growth (%) (Q)", "Real Potential GDP (Q)", "Unemployment (%) (M)"]
+    assert names({base, base + " › PGDP Growth (%) (Q)"}) == ["Output", "Real Growth (%) (Q)", "PGDP Growth (%) (Q)", "Unemployment (%) (M)"]
+    assert names({base + " › " + INPUT + "Real GDP (Q)"}) == [
+        "Output", "Real Growth (%) (Q)", "Real GDP (Q)", "PGDP Growth (%) (Q)", "Real Potential GDP (Q)", "Unemployment (%) (M)"
+    ]
+    assert names({"Output"}) == ["Output"]
