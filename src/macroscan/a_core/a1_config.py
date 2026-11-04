@@ -102,17 +102,45 @@ def _indicator(text: str, where: str) -> Indicator:
         raise ConfigError(f"{where}: {e}") from None
 
 
-def load_table_indicators(path: Path) -> list[Indicator]:
-    """Load the indicators the app's table shows, in file order; each must be a defined Indicator."""
-    shown: list[Indicator] = []
-    for n, row in enumerate(_read_rows(path, {"indicator"}), start=2):
-        name = _indicator(row["indicator"], f"{path} row {n}")
-        if name in shown:
-            raise ConfigError(f"{path} row {n}: duplicate indicator {name!r}")
-        shown.append(name)
-    if not shown:
+@dataclass(frozen=True)
+class TableRow:
+    """One row of the app table's outline: a section header (no data) or an indicator, at a depth."""
+    level: int
+    header: str | None = None
+    indicator: Indicator | None = None
+
+    @property
+    def is_header(self) -> bool:
+        return self.indicator is None
+
+
+def load_table_layout(path: Path) -> list[TableRow]:
+    """Load the app table's outline, in file order.
+
+    Each row sets `level` (depth, 0 = top) and exactly one of `header` (a section title with
+    no data) or `indicator` (a defined Indicator). A row may be at most one level deeper than
+    the row before it, and the first row is at level 0.
+    """
+    layout: list[TableRow] = []
+    for n, row in enumerate(_read_rows(path, {"level", "header", "indicator"}), start=2):
+        where = f"{path} row {n}"
+        if not row["level"].isdigit():
+            raise ConfigError(f"{where}: level {row['level']!r} must be a whole number >= 0")
+        level = int(row["level"])
+        if level > (layout[-1].level + 1 if layout else 0):
+            raise ConfigError(f"{where}: level {level} skips a level (previous row is at {layout[-1].level if layout else 'none'})")
+        if bool(row["header"]) == bool(row["indicator"]):
+            raise ConfigError(f"{where}: set exactly one of header or indicator")
+        if row["header"]:
+            layout.append(TableRow(level, header=row["header"]))
+            continue
+        name = _indicator(row["indicator"], where)
+        if any(r.indicator == name for r in layout):
+            raise ConfigError(f"{where}: duplicate indicator {name!r}")
+        layout.append(TableRow(level, indicator=name))
+    if not any(not r.is_header for r in layout):
         raise ConfigError(f"{path}: no table indicators configured")
-    return shown
+    return layout
 
 
 def load_series(path: Path, source: str) -> list[SeriesSpec]:

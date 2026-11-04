@@ -3,11 +3,19 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
+from macroscan.a_core.a1_config import TableRow
 from macroscan.a_core.a2_schema import FETCH_COLUMNS, parse_periods
 from macroscan.a_core.a3_indicators import Indicator
 from macroscan.b_ingest.b3_store import Store
 from macroscan.c_transform.c1_load import load_ingested
-from macroscan.d_visualization.d1_frames import chart_series, is_percent_row, latest_table
+from macroscan.d_visualization.d1_frames import (
+    INDENT,
+    chart_series,
+    header_labels,
+    is_percent_row,
+    latest_table,
+    unindent,
+)
 
 T1 = datetime(2026, 1, 15, tzinfo=timezone.utc)
 
@@ -50,11 +58,40 @@ def test_latest_table(tmp_path):
     assert np.isnan(table.at["Unemployment (%) (M)", "DEU"]) and table["JPN"].isna().all()
 
 
-def test_latest_table_limits_indicators(tmp_path):
-    """Only the listed indicators become rows; an empty selection gives an empty table."""
-    data = ingested(tmp_path)
-    assert list(latest_table(data, ["USA"], [Indicator.UNEMPLOYMENT]).index) == ["Unemployment (%) (M)"]
-    assert latest_table(data, ["USA"], [Indicator.GOLD]).empty
+LAYOUT = [
+    TableRow(0, header="Output"),
+    TableRow(1, indicator=Indicator.UNEMPLOYMENT),
+    TableRow(1, indicator=Indicator.REAL_GDP),
+    TableRow(0, header="Assets"),
+    TableRow(1, indicator=Indicator.GOLD),
+]
+
+
+def test_latest_table_layout(tmp_path):
+    """Rows follow the layout, indented by level; headers and data-less indicators are empty rows."""
+    table = latest_table(ingested(tmp_path), ["USA", "DEU"], LAYOUT)
+    assert list(table.index) == [
+        "Output",
+        INDENT + "Unemployment (%) (M)",
+        INDENT + "Real GDP (Q)",
+        "Assets",
+        INDENT + "Gold",
+    ]
+    assert list(table.columns) == ["USA", "DEU"]
+    assert table.at[INDENT + "Real GDP (Q)", "DEU"] == 5.0
+    assert table.loc[["Output", "Assets", INDENT + "Gold"]].isna().all().all()
+    assert header_labels(LAYOUT) == ["Output", "Assets"]
+
+
+def test_latest_table_layout_without_data():
+    """With no data at all, the layout still gives every row, all empty."""
+    table = latest_table({}, ["USA"], LAYOUT)
+    assert len(table) == len(LAYOUT) and table.isna().all().all()
+
+
+def test_unindent():
+    """Indented labels round-trip to the row labels chart_series uses."""
+    assert unindent(INDENT * 2 + "Real GDP (Q)") == "Real GDP (Q)"
 
 
 def test_chart_series(tmp_path):

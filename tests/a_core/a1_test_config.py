@@ -6,7 +6,8 @@ from macroscan.a_core.a1_config import (
     TABLE_FILE,
     ConfigError,
     load_all_series,
-    load_table_indicators,
+    TableRow,
+    load_table_layout,
     parse_filters,
     slug,
 )
@@ -82,18 +83,44 @@ def test_duplicate_series(tmp_path):
         load_all_series(tmp_path)
 
 
-def test_load_table_indicators(tmp_path):
-    """The listed indicators come back in file order; unknown or repeated ones raise ConfigError."""
+def test_load_table_layout(tmp_path):
+    """Header and indicator rows come back in file order with their levels."""
     path = tmp_path / "t.csv"
-    path.write_text("indicator\nCPI_INFLATION\nREAL_GDP\n")
-    assert load_table_indicators(path) == [Indicator.CPI_INFLATION, Indicator.REAL_GDP]
-    for bad in ["Real GDP", "REAL_GDP\nREAL_GDP", ""]:
-        path.write_text("indicator\n" + bad + "\n")
-        with pytest.raises(ConfigError):
-            load_table_indicators(path)
+    path.write_text("level,header,indicator\n0,Output,\n1,,REAL_GROWTH\n2,,PGDP_GROWTH\n0,Inflation,\n1,,CPI_INFLATION\n")
+    assert load_table_layout(path) == [
+        TableRow(0, header="Output"),
+        TableRow(1, indicator=Indicator.REAL_GROWTH),
+        TableRow(2, indicator=Indicator.PGDP_GROWTH),
+        TableRow(0, header="Inflation"),
+        TableRow(1, indicator=Indicator.CPI_INFLATION),
+    ]
+    assert load_table_layout(path)[0].is_header and not load_table_layout(path)[1].is_header
+
+
+@pytest.mark.parametrize(
+    "rows, match",
+    [
+        ("0,,Real GDP", "unknown indicator"),
+        ("0,,REAL_GDP\n0,,REAL_GDP", "duplicate indicator"),
+        ("0,Output,REAL_GDP", "exactly one of header or indicator"),
+        ("0,,", "exactly one of header or indicator"),
+        ("x,,REAL_GDP", "whole number"),
+        ("-1,,REAL_GDP", "whole number"),
+        ("1,,REAL_GDP", "skips a level"),
+        ("0,Output,\n2,,REAL_GDP", "skips a level"),
+        ("0,Output,", "no table indicators"),
+        ("", "no table indicators"),
+    ],
+)
+def test_bad_table_layout(tmp_path, rows, match):
+    """Malformed outline rows raise ConfigError."""
+    path = tmp_path / "t.csv"
+    path.write_text("level,header,indicator\n" + rows + "\n")
+    with pytest.raises(ConfigError, match=match):
+        load_table_layout(path)
 
 
 def test_repo_config_is_consistent():
     """The real config/ loads: every indicator it names is defined in Indicator."""
     load_all_series(REPO_CONFIG)
-    load_table_indicators(REPO_CONFIG / TABLE_FILE)
+    load_table_layout(REPO_CONFIG / TABLE_FILE)

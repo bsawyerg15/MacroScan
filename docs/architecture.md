@@ -54,6 +54,7 @@ flowchart LR
   a_core_a2_schema --> c_transform_c3_derived
   a_core_a3_indicators --> c_transform_c3_derived
   c_transform_c2_transformations --> c_transform_c3_derived
+  a_core_a1_config --> d_visualization_d1_frames
   a_core_a3_indicators --> d_visualization_d1_frames
   a_core_a1_config --> d_visualization_d2_app
   a_core_a4_countries --> d_visualization_d2_app
@@ -100,6 +101,7 @@ flowchart LR
 |---|---|
 | [`ConfigError`](#cls-ConfigError) | Raised when a config CSV is missing, malformed or inconsistent. |
 | [`SeriesSpec`](#cls-SeriesSpec) | One source's series for an (indicator, frequency): where to fetch it and how to filter it. |
+| [`TableRow`](#cls-TableRow) | One row of the app table's outline: a section header (no data) or an indicator, at a depth. |
 | [`PeriodInterval`](#cls-PeriodInterval) | A span of time, e.g. PeriodInterval.months(12); `periods_at` counts it at one of our frequencies. |
 | [`Indicator`](#cls-Indicator) | A conceptual indicator; the value is the member name, as used in config and stored data. |
 | [`Country`](#cls-Country) | A country; the value is its ISO3 code (the member name), as used in config and stored data. |
@@ -132,6 +134,12 @@ classDiagram
     end: str or None
     name: str
     label(self) : str
+  }
+  class TableRow {
+    level: int
+    header: str or None
+    indicator: Indicator or None
+    is_header(self) : bool
   }
   class PeriodInterval {
     total_months: int
@@ -229,6 +237,7 @@ classDiagram
   }
   click ConfigError href "#cls-ConfigError"
   click SeriesSpec href "#cls-SeriesSpec"
+  click TableRow href "#cls-TableRow"
   click PeriodInterval href "#cls-PeriodInterval"
   click Indicator href "#cls-Indicator"
   click Country href "#cls-Country"
@@ -258,19 +267,20 @@ flowchart LR
     n_a_core_a1_config__read_rows["_read_rows"]
     n_a_core_a1_config_load_all_series["load_all_series"]
     n_a_core_a1_config_load_series["load_series"]
-    n_a_core_a1_config_load_table_indicators["load_table_indicators"]
+    n_a_core_a1_config_load_table_layout["load_table_layout"]
     n_a_core_a1_config_parse_filters["parse_filters"]
     n_a_core_a1_config_series_files["series_files"]
     n_a_core_a1_config_slug["slug"]
   end
   n_a_core_a1_config_ConfigError["a1_config.ConfigError"]:::ext
   n_a_core_a1_config_SeriesSpec["a1_config.SeriesSpec"]:::ext
+  n_a_core_a1_config_TableRow["a1_config.TableRow"]:::ext
   n_a_core_a3_indicators_Indicator_parse["a3_indicators.Indicator.parse"]:::ext
   n_b_ingest_b3_store_Store__find["b3_store.Store._find"]:::ext
   n_b_ingest_b3_store_Store_path["b3_store.Store.path"]:::ext
   n_b_ingest_b3_store__manifest_key["b3_store._manifest_key"]:::ext
   n_b_ingest_b4_run_ingest["b4_run.ingest"]:::ext
-  n_d_visualization_d2_app__table_indicators["d2_app._table_indicators"]:::ext
+  n_d_visualization_d2_app__table_layout["d2_app._table_layout"]:::ext
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config__indicator
   n_a_core_a3_indicators_Indicator_parse --> n_a_core_a1_config__indicator
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config__read_rows
@@ -282,22 +292,24 @@ flowchart LR
   n_a_core_a1_config__indicator --> n_a_core_a1_config_load_series
   n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_series
   n_a_core_a1_config_parse_filters --> n_a_core_a1_config_load_series
-  n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_table_indicators
-  n_a_core_a1_config__indicator --> n_a_core_a1_config_load_table_indicators
-  n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_table_indicators
+  n_a_core_a1_config_ConfigError --> n_a_core_a1_config_load_table_layout
+  n_a_core_a1_config_TableRow --> n_a_core_a1_config_load_table_layout
+  n_a_core_a1_config__indicator --> n_a_core_a1_config_load_table_layout
+  n_a_core_a1_config__read_rows --> n_a_core_a1_config_load_table_layout
   n_a_core_a1_config_ConfigError --> n_a_core_a1_config_parse_filters
   n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store__find
   n_a_core_a1_config_slug --> n_b_ingest_b3_store_Store_path
   n_a_core_a1_config_slug --> n_b_ingest_b3_store__manifest_key
   n_a_core_a1_config_load_all_series --> n_b_ingest_b4_run_ingest
-  n_a_core_a1_config_load_table_indicators --> n_d_visualization_d2_app__table_indicators
+  n_a_core_a1_config_load_table_layout --> n_d_visualization_d2_app__table_layout
   click n_a_core_a1_config_ConfigError href "#cls-ConfigError"
   click n_a_core_a1_config_SeriesSpec href "#cls-SeriesSpec"
+  click n_a_core_a1_config_TableRow href "#cls-TableRow"
   click n_a_core_a1_config__indicator href "#fn-a_core-a1_config-_indicator"
   click n_a_core_a1_config__read_rows href "#fn-a_core-a1_config-_read_rows"
   click n_a_core_a1_config_load_all_series href "#fn-a_core-a1_config-load_all_series"
   click n_a_core_a1_config_load_series href "#fn-a_core-a1_config-load_series"
-  click n_a_core_a1_config_load_table_indicators href "#fn-a_core-a1_config-load_table_indicators"
+  click n_a_core_a1_config_load_table_layout href "#fn-a_core-a1_config-load_table_layout"
   click n_a_core_a1_config_parse_filters href "#fn-a_core-a1_config-parse_filters"
   click n_a_core_a1_config_series_files href "#fn-a_core-a1_config-series_files"
   click n_a_core_a1_config_slug href "#fn-a_core-a1_config-slug"
@@ -306,7 +318,7 @@ flowchart LR
   click n_b_ingest_b3_store_Store_path href "#fn-b_ingest-b3_store-Store.path"
   click n_b_ingest_b3_store__manifest_key href "#fn-b_ingest-b3_store-_manifest_key"
   click n_b_ingest_b4_run_ingest href "#fn-b_ingest-b4_run-ingest"
-  click n_d_visualization_d2_app__table_indicators href "#fn-d_visualization-d2_app-_table_indicators"
+  click n_d_visualization_d2_app__table_layout href "#fn-d_visualization-d2_app-_table_layout"
   classDef ext stroke-dasharray: 4 3
 ```
 
@@ -321,24 +333,24 @@ flowchart LR
 - <a id="fn-a_core-a1_config-_read_rows"></a>**[`_read_rows(path: Path, required: set[str]) -> list[dict[str, str]]`](../src/macroscan/a_core/a1_config.py#L83)** — Read a CSV into stripped dicts, skipping blank and '#'-commented rows.
   - returns: `[r for r in rows if any(r.values()) a...`: `list[dict[str, str]]`
   - calls: [`ConfigError`](#cls-ConfigError)
-  - called by: [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_indicators`](#fn-a_core-a1_config-load_table_indicators)
+  - called by: [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_layout`](#fn-a_core-a1_config-load_table_layout)
 - <a id="fn-a_core-a1_config-_indicator"></a>**[`_indicator(text: str, where: str) -> Indicator`](../src/macroscan/a_core/a1_config.py#L97)** — The Indicator named `text`, or a ConfigError pointing at `where`.
   - returns: `Indicator.parse(text)`: `Indicator`
   - calls: [`ConfigError`](#cls-ConfigError), [`a3_indicators.Indicator.parse`](#fn-a_core-a3_indicators-Indicator.parse)
-  - called by: [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_indicators`](#fn-a_core-a1_config-load_table_indicators)
-- <a id="fn-a_core-a1_config-load_table_indicators"></a>**[`load_table_indicators(path: Path) -> list[Indicator]`](../src/macroscan/a_core/a1_config.py#L105)** — Load the indicators the app's table shows, in file order; each must be a defined Indicator.
-  - returns: `shown`: `list[Indicator]`
-  - calls: [`ConfigError`](#cls-ConfigError), [`_indicator`](#fn-a_core-a1_config-_indicator), [`_read_rows`](#fn-a_core-a1_config-_read_rows)
-  - called by: [`d2_app._table_indicators`](#fn-d_visualization-d2_app-_table_indicators)
-- <a id="fn-a_core-a1_config-load_series"></a>**[`load_series(path: Path, source: str) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L118)** — Load and validate one source's series CSV into SeriesSpecs.
+  - called by: [`load_series`](#fn-a_core-a1_config-load_series), [`load_table_layout`](#fn-a_core-a1_config-load_table_layout)
+- <a id="fn-a_core-a1_config-load_table_layout"></a>**[`load_table_layout(path: Path) -> list[TableRow]`](../src/macroscan/a_core/a1_config.py#L117)** — Load the app table's outline, in file order.
+  - returns: `layout`: `list[TableRow]`
+  - calls: [`ConfigError`](#cls-ConfigError), [`TableRow`](#cls-TableRow), [`_indicator`](#fn-a_core-a1_config-_indicator), [`_read_rows`](#fn-a_core-a1_config-_read_rows)
+  - called by: [`d2_app._table_layout`](#fn-d_visualization-d2_app-_table_layout)
+- <a id="fn-a_core-a1_config-load_series"></a>**[`load_series(path: Path, source: str) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L146)** — Load and validate one source's series CSV into SeriesSpecs.
   - returns: `specs`: `list[SeriesSpec]`
   - calls: [`ConfigError`](#cls-ConfigError), [`SeriesSpec`](#cls-SeriesSpec), [`_indicator`](#fn-a_core-a1_config-_indicator), [`_read_rows`](#fn-a_core-a1_config-_read_rows), [`parse_filters`](#fn-a_core-a1_config-parse_filters)
   - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
-- <a id="fn-a_core-a1_config-series_files"></a>**[`series_files(config_dir: Path) -> dict[str, Path]`](../src/macroscan/a_core/a1_config.py#L153)** — Map source name -> its series CSV, e.g. {'oecd': config/02_oecd_indicators.csv}.
+- <a id="fn-a_core-a1_config-series_files"></a>**[`series_files(config_dir: Path) -> dict[str, Path]`](../src/macroscan/a_core/a1_config.py#L181)** — Map source name -> its series CSV, e.g. {'oecd': config/02_oecd_indicators.csv}.
   - returns: `files`: `dict[str, Path]`
   - calls: *(none)*
   - called by: [`load_all_series`](#fn-a_core-a1_config-load_all_series)
-- <a id="fn-a_core-a1_config-load_all_series"></a>**[`load_all_series(config_dir: Path=DEFAULT_CONFIG_DIR) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L163)** — Load every source's series CSV; each (source, indicator, frequency) may appear once.
+- <a id="fn-a_core-a1_config-load_all_series"></a>**[`load_all_series(config_dir: Path=DEFAULT_CONFIG_DIR) -> list[SeriesSpec]`](../src/macroscan/a_core/a1_config.py#L191)** — Load every source's series CSV; each (source, indicator, frequency) may appear once.
   - returns: `specs`: `list[SeriesSpec]`
   - calls: [`ConfigError`](#cls-ConfigError), [`load_series`](#fn-a_core-a1_config-load_series), [`series_files`](#fn-a_core-a1_config-series_files)
   - called by: [`b4_run.ingest`](#fn-b_ingest-b4_run-ingest)
@@ -346,6 +358,10 @@ flowchart LR
 - <a id="cls-SeriesSpec"></a>**[class `SeriesSpec`](../src/macroscan/a_core/a1_config.py#L37)** — One source's series for an (indicator, frequency): where to fetch it and how to filter it.
   - <a id="fn-a_core-a1_config-SeriesSpec.label"></a>**[`label(self) -> str`](../src/macroscan/a_core/a1_config.py#L53)** — 'oecd/REAL_GDP/Q', for logs and error messages.
     - returns: `f'{self.source}/{self.indicator}/{sel...`: `str`
+    - calls: *(none)*
+- <a id="cls-TableRow"></a>**[class `TableRow`](../src/macroscan/a_core/a1_config.py#L106)** — One row of the app table's outline: a section header (no data) or an indicator, at a depth.
+  - <a id="fn-a_core-a1_config-TableRow.is_header"></a>**[`is_header(self) -> bool`](../src/macroscan/a_core/a1_config.py#L113)** — *(no docstring)*
+    - returns: `self.indicator is None`: `bool`
     - calls: *(none)*
 
 ### <a id="mod-a_core-a2_schema"></a>[`a_core.a2_schema`](../src/macroscan/a_core/a2_schema.py)
@@ -1251,54 +1267,76 @@ flowchart LR
   subgraph this["d_visualization.d1_frames"]
     n_d_visualization_d1_frames__labelled["_labelled"]
     n_d_visualization_d1_frames_chart_series["chart_series"]
+    n_d_visualization_d1_frames_header_labels["header_labels"]
+    n_d_visualization_d1_frames_indent["indent"]
     n_d_visualization_d1_frames_is_percent_row["is_percent_row"]
     n_d_visualization_d1_frames_latest_table["latest_table"]
     n_d_visualization_d1_frames_row_label["row_label"]
     n_d_visualization_d1_frames_series_label["series_label"]
+    n_d_visualization_d1_frames_unindent["unindent"]
   end
   n_a_core_a3_indicators_Indicator["a3_indicators.Indicator"]:::ext
   n_d_visualization_d2_app_main["d2_app.main"]:::ext
   n_d_visualization_d1_frames_row_label --> n_d_visualization_d1_frames__labelled
   n_d_visualization_d1_frames__labelled --> n_d_visualization_d1_frames_chart_series
   n_d_visualization_d1_frames_series_label --> n_d_visualization_d1_frames_chart_series
+  n_d_visualization_d1_frames_indent --> n_d_visualization_d1_frames_header_labels
   n_d_visualization_d1_frames__labelled --> n_d_visualization_d1_frames_latest_table
+  n_d_visualization_d1_frames_indent --> n_d_visualization_d1_frames_latest_table
   n_a_core_a3_indicators_Indicator --> n_d_visualization_d1_frames_row_label
   n_d_visualization_d1_frames_chart_series --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_header_labels --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_is_percent_row --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_latest_table --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_series_label --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_unindent --> n_d_visualization_d2_app_main
   click n_a_core_a3_indicators_Indicator href "#cls-Indicator"
   click n_d_visualization_d1_frames__labelled href "#fn-d_visualization-d1_frames-_labelled"
   click n_d_visualization_d1_frames_chart_series href "#fn-d_visualization-d1_frames-chart_series"
+  click n_d_visualization_d1_frames_header_labels href "#fn-d_visualization-d1_frames-header_labels"
+  click n_d_visualization_d1_frames_indent href "#fn-d_visualization-d1_frames-indent"
   click n_d_visualization_d1_frames_is_percent_row href "#fn-d_visualization-d1_frames-is_percent_row"
   click n_d_visualization_d1_frames_latest_table href "#fn-d_visualization-d1_frames-latest_table"
   click n_d_visualization_d1_frames_row_label href "#fn-d_visualization-d1_frames-row_label"
   click n_d_visualization_d1_frames_series_label href "#fn-d_visualization-d1_frames-series_label"
+  click n_d_visualization_d1_frames_unindent href "#fn-d_visualization-d1_frames-unindent"
   click n_d_visualization_d2_app_main href "#fn-d_visualization-d2_app-main"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-d_visualization-d1_frames-row_label"></a>**[`row_label(indicator: str, frequency: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L14)** — Table row for an (indicator, frequency), by its label: 'REAL_GDP' -> 'Real GDP (Q)'.
+- <a id="fn-d_visualization-d1_frames-row_label"></a>**[`row_label(indicator: str, frequency: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L18)** — Table row for an (indicator, frequency), by its label: 'REAL_GDP' -> 'Real GDP (Q)'.
   - returns: `f'{Indicator(indicator).label} ({freq...`: `str`
   - calls: [`a3_indicators.Indicator`](#cls-Indicator)
   - called by: [`_labelled`](#fn-d_visualization-d1_frames-_labelled)
-- <a id="fn-d_visualization-d1_frames-series_label"></a>**[`series_label(row: str, country: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L19)** — Chart line name for one table cell: 'USA · Real GDP (Q)'.
+- <a id="fn-d_visualization-d1_frames-series_label"></a>**[`series_label(row: str, country: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L23)** — Chart line name for one table cell: 'USA · Real GDP (Q)'.
   - returns: `f'{country} · {row}'`: `str`
   - calls: *(none)*
   - called by: [`chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-is_percent_row"></a>**[`is_percent_row(row: str) -> bool`](../src/macroscan/d_visualization/d1_frames.py#L24)** — Whether a table row holds percents (stored as decimals): its indicator's label has a '%'.
+- <a id="fn-d_visualization-d1_frames-is_percent_row"></a>**[`is_percent_row(row: str) -> bool`](../src/macroscan/d_visualization/d1_frames.py#L28)** — Whether a table row holds percents (stored as decimals): its indicator's label has a '%'.
   - returns: `'%' in row`: `bool`
   - calls: *(none)*
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-latest_table"></a>**[`latest_table(data: dict[str, pd.DataFrame], countries: list[str], indicators: list[str] | None=None) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L29)** — Last value per indicator (rows) and country (columns, in `countries` order).
-  - returns: `pd.DataFrame(columns=countries, dtype...`, `wide.sort_index()`: `pd.DataFrame`
-  - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled)
+- <a id="fn-d_visualization-d1_frames-indent"></a>**[`indent(label: str, level: int) -> str`](../src/macroscan/d_visualization/d1_frames.py#L33)** — A table label shown `level` steps into the outline.
+  - returns: `INDENT * level + label`: `str`
+  - calls: *(none)*
+  - called by: [`header_labels`](#fn-d_visualization-d1_frames-header_labels), [`latest_table`](#fn-d_visualization-d1_frames-latest_table)
+- <a id="fn-d_visualization-d1_frames-unindent"></a>**[`unindent(label: str) -> str`](../src/macroscan/d_visualization/d1_frames.py#L38)** — A table label without its outline indent, as `row_label` gives it.
+  - returns: `label.lstrip('\xa0')`: `str`
+  - calls: *(none)*
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-chart_series"></a>**[`chart_series(data: dict[str, pd.DataFrame], picks: list[tuple[str, str]]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L44)** — One column per (row label, country) pick, indexed by timestamp; frequencies are outer-joined.
+- <a id="fn-d_visualization-d1_frames-header_labels"></a>**[`header_labels(layout: list[TableRow]) -> list[str]`](../src/macroscan/d_visualization/d1_frames.py#L43)** — The table labels of the layout's header rows, as `latest_table` shows them.
+  - returns: `[indent(r.header, r.level) for r in l...`: `list[str]`
+  - calls: [`indent`](#fn-d_visualization-d1_frames-indent)
+  - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d1_frames-latest_table"></a>**[`latest_table(data: dict[str, pd.DataFrame], countries: list[str], layout: list[TableRow] | None=None) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L48)** — Last value per indicator (rows) and country (columns, in `countries` order).
+  - returns: `wide.sort_index()`, `table`: `pd.DataFrame`
+  - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled), [`indent`](#fn-d_visualization-d1_frames-indent)
+  - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
+- <a id="fn-d_visualization-d1_frames-chart_series"></a>**[`chart_series(data: dict[str, pd.DataFrame], picks: list[tuple[str, str]]) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L84)** — One column per (row label, country) pick, indexed by timestamp; frequencies are outer-joined.
   - returns: `chart`: `pd.DataFrame`
   - calls: [`_labelled`](#fn-d_visualization-d1_frames-_labelled), [`series_label`](#fn-d_visualization-d1_frames-series_label)
   - called by: [`d2_app.main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d1_frames-_labelled"></a>**[`_labelled(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L62)** — A long frame with its table row label added.
+- <a id="fn-d_visualization-d1_frames-_labelled"></a>**[`_labelled(df: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/d_visualization/d1_frames.py#L102)** — A long frame with its table row label added.
   - returns: `df.assign(row=[row_label(i, f) for i,...`: `pd.DataFrame`
   - calls: [`row_label`](#fn-d_visualization-d1_frames-row_label)
   - called by: [`chart_series`](#fn-d_visualization-d1_frames-chart_series), [`latest_table`](#fn-d_visualization-d1_frames-latest_table)
@@ -1313,59 +1351,65 @@ flowchart LR
     n_d_visualization_d2_app__color["_color"]
     n_d_visualization_d2_app__countries["_countries"]
     n_d_visualization_d2_app__data["_data"]
-    n_d_visualization_d2_app__table_indicators["_table_indicators"]
+    n_d_visualization_d2_app__table_layout["_table_layout"]
     n_d_visualization_d2_app_main["main"]
   end
-  n_a_core_a1_config_load_table_indicators["a1_config.load_table_indicators"]:::ext
+  n_a_core_a1_config_load_table_layout["a1_config.load_table_layout"]:::ext
   n_c_transform_c1_load_load_ingested["c1_load.load_ingested"]:::ext
   n_c_transform_c3_derived_apply_derivations["c3_derived.apply_derivations"]:::ext
   n_d_visualization_d1_frames_chart_series["d1_frames.chart_series"]:::ext
+  n_d_visualization_d1_frames_header_labels["d1_frames.header_labels"]:::ext
   n_d_visualization_d1_frames_is_percent_row["d1_frames.is_percent_row"]:::ext
   n_d_visualization_d1_frames_latest_table["d1_frames.latest_table"]:::ext
   n_d_visualization_d1_frames_series_label["d1_frames.series_label"]:::ext
+  n_d_visualization_d1_frames_unindent["d1_frames.unindent"]:::ext
   n_c_transform_c1_load_load_ingested --> n_d_visualization_d2_app__data
   n_c_transform_c3_derived_apply_derivations --> n_d_visualization_d2_app__data
-  n_a_core_a1_config_load_table_indicators --> n_d_visualization_d2_app__table_indicators
+  n_a_core_a1_config_load_table_layout --> n_d_visualization_d2_app__table_layout
   n_d_visualization_d1_frames_chart_series --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_header_labels --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_is_percent_row --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_latest_table --> n_d_visualization_d2_app_main
   n_d_visualization_d1_frames_series_label --> n_d_visualization_d2_app_main
+  n_d_visualization_d1_frames_unindent --> n_d_visualization_d2_app_main
   n_d_visualization_d2_app__color --> n_d_visualization_d2_app_main
   n_d_visualization_d2_app__countries --> n_d_visualization_d2_app_main
   n_d_visualization_d2_app__data --> n_d_visualization_d2_app_main
-  n_d_visualization_d2_app__table_indicators --> n_d_visualization_d2_app_main
-  click n_a_core_a1_config_load_table_indicators href "#fn-a_core-a1_config-load_table_indicators"
+  n_d_visualization_d2_app__table_layout --> n_d_visualization_d2_app_main
+  click n_a_core_a1_config_load_table_layout href "#fn-a_core-a1_config-load_table_layout"
   click n_c_transform_c1_load_load_ingested href "#fn-c_transform-c1_load-load_ingested"
   click n_c_transform_c3_derived_apply_derivations href "#fn-c_transform-c3_derived-apply_derivations"
   click n_d_visualization_d1_frames_chart_series href "#fn-d_visualization-d1_frames-chart_series"
+  click n_d_visualization_d1_frames_header_labels href "#fn-d_visualization-d1_frames-header_labels"
   click n_d_visualization_d1_frames_is_percent_row href "#fn-d_visualization-d1_frames-is_percent_row"
   click n_d_visualization_d1_frames_latest_table href "#fn-d_visualization-d1_frames-latest_table"
   click n_d_visualization_d1_frames_series_label href "#fn-d_visualization-d1_frames-series_label"
+  click n_d_visualization_d1_frames_unindent href "#fn-d_visualization-d1_frames-unindent"
   click n_d_visualization_d2_app__color href "#fn-d_visualization-d2_app-_color"
   click n_d_visualization_d2_app__countries href "#fn-d_visualization-d2_app-_countries"
   click n_d_visualization_d2_app__data href "#fn-d_visualization-d2_app-_data"
-  click n_d_visualization_d2_app__table_indicators href "#fn-d_visualization-d2_app-_table_indicators"
+  click n_d_visualization_d2_app__table_layout href "#fn-d_visualization-d2_app-_table_layout"
   click n_d_visualization_d2_app_main href "#fn-d_visualization-d2_app-main"
   classDef ext stroke-dasharray: 4 3
 ```
 
-- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L30)** — Ingested data plus the derived indicators, built once per session.
+- <a id="fn-d_visualization-d2_app-_data"></a>**[`_data() -> dict[str, pd.DataFrame]`](../src/macroscan/d_visualization/d2_app.py#L39)** — Ingested data plus the derived indicators, built once per session.
   - returns: `apply_derivations(load_ingested(DEFAU...`: `dict[str, pd.DataFrame]`
   - calls: [`c1_load.load_ingested`](#fn-c_transform-c1_load-load_ingested), [`c3_derived.apply_derivations`](#fn-c_transform-c3_derived-apply_derivations)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L35)** — Country codes in definition order.
+- <a id="fn-d_visualization-d2_app-_countries"></a>**[`_countries() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L44)** — Country codes in definition order.
   - returns: `list(Country)`: `list[str]`
   - calls: *(none)*
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_table_indicators"></a>**[`_table_indicators() -> list[str]`](../src/macroscan/d_visualization/d2_app.py#L41)** — Indicators shown in the table, from config.
-  - returns: `load_table_indicators(DEFAULT_CONFIG_...`: `list[str]`
-  - calls: [`a1_config.load_table_indicators`](#fn-a_core-a1_config-load_table_indicators)
+- <a id="fn-d_visualization-d2_app-_table_layout"></a>**[`_table_layout() -> list[TableRow]`](../src/macroscan/d_visualization/d2_app.py#L50)** — The table's outline of section headers and indicators, from config.
+  - returns: `load_table_layout(DEFAULT_CONFIG_DIR ...`: `list[TableRow]`
+  - calls: [`a1_config.load_table_layout`](#fn-a_core-a1_config-load_table_layout)
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-_color"></a>**[`_color(label: str, picks: list[str]) -> str`](../src/macroscan/d_visualization/d2_app.py#L46)** — The color for a charted series: its existing one, else the first palette color nobody is using.
+- <a id="fn-d_visualization-d2_app-_color"></a>**[`_color(label: str, picks: list[str]) -> str`](../src/macroscan/d_visualization/d2_app.py#L55)** — The color for a charted series: its existing one, else the first palette color nobody is using.
   - returns: `colors[label]`: `str`
   - calls: *(none)*
   - called by: [`main`](#fn-d_visualization-d2_app-main)
-- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L57)** — Render the table and the chart of picked cells.
+- <a id="fn-d_visualization-d2_app-main"></a>**[`main() -> None`](../src/macroscan/d_visualization/d2_app.py#L66)** — Render the table and the chart of picked cells.
   - returns: *(none)*
-  - calls: [`d1_frames.chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d1_frames.is_percent_row`](#fn-d_visualization-d1_frames-is_percent_row), [`d1_frames.latest_table`](#fn-d_visualization-d1_frames-latest_table), [`d1_frames.series_label`](#fn-d_visualization-d1_frames-series_label), [`_color`](#fn-d_visualization-d2_app-_color), [`_countries`](#fn-d_visualization-d2_app-_countries), [`_data`](#fn-d_visualization-d2_app-_data), [`_table_indicators`](#fn-d_visualization-d2_app-_table_indicators)
+  - calls: [`d1_frames.chart_series`](#fn-d_visualization-d1_frames-chart_series), [`d1_frames.header_labels`](#fn-d_visualization-d1_frames-header_labels), [`d1_frames.is_percent_row`](#fn-d_visualization-d1_frames-is_percent_row), [`d1_frames.latest_table`](#fn-d_visualization-d1_frames-latest_table), [`d1_frames.series_label`](#fn-d_visualization-d1_frames-series_label), [`d1_frames.unindent`](#fn-d_visualization-d1_frames-unindent), [`_color`](#fn-d_visualization-d2_app-_color), [`_countries`](#fn-d_visualization-d2_app-_countries), [`_data`](#fn-d_visualization-d2_app-_data), [`_table_layout`](#fn-d_visualization-d2_app-_table_layout)
 
