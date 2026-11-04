@@ -17,7 +17,7 @@ from macroscan.a_core.a4_countries import Country
 from macroscan.b_ingest.b3_store import DEFAULT_ROOT
 from macroscan.c_transform.c1_load import load_ingested
 from macroscan.c_transform.c3_derived import apply_derivations
-from macroscan.d_visualization.d1_frames import chart_series, latest_table, series_label
+from macroscan.d_visualization.d1_frames import chart_series, is_percent_row, latest_table, series_label
 
 # A series keeps its color while charted; a removed series frees its color for the next one added.
 PALETTE = ["#0066ff", "#d62728", "#2ca02c", "#000000", "#ff7f0e", "#7f7f7f", "#9467bd", "#17becf", "#bcbd22", "#8c564b"]  # blue, red, green, black, orange, gray, then purple, teal, olive, brown
@@ -85,9 +85,15 @@ def main() -> None:
     st.multiselect("Charted series", options=list(cells), key=PICKS_KEY)
 
     st.caption("Latest value. Click a cell to add it to the chart.")
+    # Number formats differ by row, which column_config can't express, so format with a Styler.
+    percent_rows = [r for r in table.index if is_percent_row(r)]
+    other_rows = [r for r in table.index if r not in percent_rows]
+    styled = (
+        table.style.format("{:.2%}", subset=pd.IndexSlice[percent_rows, :], na_rep="")
+        .format("{:,.2f}", subset=pd.IndexSlice[other_rows, :], na_rep="")
+    )
     st.dataframe(
-        table,
-        column_config={c: st.column_config.NumberColumn(format="localized") for c in table.columns},
+        styled,
         on_select=add_clicked_cell,
         selection_mode="single-cell",
         key=TABLE_KEY,

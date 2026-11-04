@@ -43,6 +43,7 @@ class Indicator(StrEnum):
 
     REAL_GDP = auto(), "Real GDP", "Output growth: real (inflation-adjusted) gross domestic product"
     REAL_GROWTH = auto(), "Real Growth (%)", "Y/Y % change of real GDP"
+    REAL_GROWTH_MA_CHANGE = auto(), "Real Growth MA Change (%)", "% change of real GDP: latest quarter vs the mean of the 18 months before it"
     PGDP = auto(), "PGDP", "GDP price deflator: nominal GDP divided by real GDP"
     PGDP_GROWTH = auto(), "PGDP Growth (%)", "Y/Y % change of the GDP deflator"
     NOMINAL_GDP = auto(), "Nominal GDP", "Gross domestic product at current prices"

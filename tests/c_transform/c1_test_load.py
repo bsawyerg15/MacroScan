@@ -39,3 +39,15 @@ def test_load_ingested_groups_by_frequency(tmp_path):
     assert len(data["Q"]) == 2 and set(data["M"]["indicator"]) == {Indicator.UNEMPLOYMENT, Indicator.CPI_INFLATION}
     assert data["M"]["period"].dtype == pd.PeriodDtype("M")
     assert set(load_ingested(tmp_path, ["Q"])) == {"Q"}
+
+
+def test_load_ingested_turns_percents_into_decimals(tmp_path):
+    """Percent-unit series (PA, PT_*) come back divided by 100 with unit '%'; others are untouched."""
+    store = Store(tmp_path)
+    for indicator, unit in [(Indicator.CPI_INFLATION, "PA"), (Indicator.UNEMPLOYMENT, "PT_LF_SUB"), (Indicator.CPI, "IX")]:
+        store.apply(frame(indicator, "M", ["2025-01"]).assign(unit=unit), "oecd", indicator, "M", pulled_at=T1)
+
+    out = load_ingested(tmp_path)["M"].set_index("indicator")
+    assert out.loc[[Indicator.CPI_INFLATION, Indicator.UNEMPLOYMENT], "value"].tolist() == [0.01, 0.01]
+    assert out.loc[[Indicator.CPI_INFLATION, Indicator.UNEMPLOYMENT], "unit"].tolist() == ["%", "%"]
+    assert out.at[Indicator.CPI, "value"] == 1.0 and out.at[Indicator.CPI, "unit"] == "IX"

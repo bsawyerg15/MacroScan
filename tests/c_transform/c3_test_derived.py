@@ -104,7 +104,7 @@ def test_apply_derivations_chains_recipes():
     assert len(data["Q"]) == 3
     assert out.at[Indicator.BUS_DEBT_LEVEL, "value"] == pytest.approx(40)
     assert out.at[Indicator.BUS_DEBT_LEVEL, "unit"] == "XDC"
-    assert out.at[Indicator.BUS_DEBT_LEVEL_GDP, "value"] == pytest.approx(20.0)
+    assert out.at[Indicator.BUS_DEBT_LEVEL_GDP, "value"] == pytest.approx(0.20)
     assert out.at[Indicator.BUS_DEBT_LEVEL_GDP, "unit"] == "%"
     assert out.at[Indicator.BUS_DEBT_LEVEL_GDP, "source"] == DERIVED_SOURCE
     assert out.at[Indicator.BUS_DEBT_LEVEL_GDP, "series_key"] == f"{DERIVED_SOURCE}:BUS_DEBT_LEVEL_GDP"
@@ -124,7 +124,7 @@ def test_apply_derivations_runs_per_frequency():
     out = apply_derivations(data, recipes)
     assert out["M"].equals(data["M"])
     derived = out["Q"][out["Q"]["indicator"] == Indicator.REAL_GROWTH]
-    assert derived["value"].tolist() == pytest.approx([10.0])
+    assert derived["value"].tolist() == pytest.approx([0.10])
     assert out["Q"]["period"].dtype == pd.PeriodDtype("Q")
 
 

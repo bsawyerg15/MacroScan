@@ -16,8 +16,9 @@ from typing import Callable
 
 import pandas as pd
 
+from macroscan.a_core.a2_schema import PeriodInterval
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.c_transform.c2_transformations import add, ratio_pct, yoy_pct
+from macroscan.c_transform.c2_transformations import add, ma_change_pct_yoy, ratio_pct, yoy_pct
 
 DERIVED_SOURCE = "derived"
 
@@ -97,6 +98,12 @@ def apply_derivations(
 @derived(unit="%")
 def real_growth(real_gdp):
     return yoy_pct(real_gdp)
+
+
+# Latest quarter vs the 18 months before it: REAL_GDP is quarterly, so the front window can't be shorter than 3 months.
+@derived(unit="%")
+def real_growth_ma_change(real_gdp):
+    return ma_change_pct_yoy(real_gdp, PeriodInterval.months(3), PeriodInterval.months(18))
 
 
 @derived(unit="%")

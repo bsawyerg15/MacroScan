@@ -21,6 +21,11 @@ def series_label(row: str, country: str) -> str:
     return f"{country} · {row}"
 
 
+def is_percent_row(row: str) -> bool:
+    """Whether a table row holds percents (stored as decimals): its indicator's label has a '%'."""
+    return "%" in row
+
+
 def latest_table(data: dict[str, pd.DataFrame], countries: list[str], indicators: list[str] | None = None) -> pd.DataFrame:
     """Last value per indicator (rows) and country (columns, in `countries` order).
 
@@ -59,4 +64,4 @@ def _labelled(df: pd.DataFrame) -> pd.DataFrame:
     return df.assign(row=[row_label(i, f) for i, f in zip(df["indicator"], df["frequency"])])
 
 
-__all__ = ["row_label", "series_label", "latest_table", "chart_series"]
+__all__ = ["row_label", "series_label", "is_percent_row", "latest_table", "chart_series"]

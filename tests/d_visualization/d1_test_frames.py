@@ -7,7 +7,7 @@ from macroscan.a_core.a2_schema import FETCH_COLUMNS, parse_periods
 from macroscan.a_core.a3_indicators import Indicator
 from macroscan.b_ingest.b3_store import Store
 from macroscan.c_transform.c1_load import load_ingested
-from macroscan.d_visualization.d1_frames import chart_series, latest_table
+from macroscan.d_visualization.d1_frames import chart_series, is_percent_row, latest_table
 
 T1 = datetime(2026, 1, 15, tzinfo=timezone.utc)
 
@@ -64,3 +64,9 @@ def test_chart_series(tmp_path):
     assert isinstance(chart.index, pd.DatetimeIndex) and chart.index.is_monotonic_increasing
     assert chart["USA · Real GDP (Q)"].dropna().tolist() == [1.0, 2.0]
     assert chart_series({}, []).empty
+
+
+def test_is_percent_row():
+    """Rows whose indicator label has a '%' are percents, including '% GDP' ratios."""
+    assert is_percent_row("Unemployment (%) (M)") and is_percent_row("HH Debt Level % GDP (Q)")
+    assert not is_percent_row("Real GDP (Q)")

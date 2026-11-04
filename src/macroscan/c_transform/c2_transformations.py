@@ -20,9 +20,9 @@ KEYS = ["country", "period"]
 
 
 def yoy_pct(df: pd.DataFrame) -> pd.DataFrame:
-    """Y/Y % change per country; periods with no year-earlier value drop out."""
+    """Y/Y % change (as a decimal) per country; periods with no year-earlier value drop out."""
     year_ago = df[[*KEYS, "value"]].assign(period=df["period"] + PERIODS_PER_YEAR[df["frequency"].iloc[0]])
-    return _combine(df, year_ago, lambda now, then: (now / then - 1) * 100)
+    return _combine(df, year_ago, lambda now, then: now / then - 1)
 
 
 def ma(df: pd.DataFrame, window: PeriodInterval) -> pd.DataFrame:
@@ -40,15 +40,13 @@ def ma(df: pd.DataFrame, window: PeriodInterval) -> pd.DataFrame:
     return _combine(df, means, lambda _, mean: mean)
 
 
-def ma_change_pct_yoy(df: pd.DataFrame) -> pd.DataFrame:
-    """% change (as a decimal) of the latest 1-month mean vs the mean of the 18 months before it.
+def ma_change_pct_yoy(df: pd.DataFrame, front: PeriodInterval, back: PeriodInterval) -> pd.DataFrame:
+    """% change (as a decimal) of the latest `front` mean vs the mean over the `back` window before it.
 
     Computed in logs, scaled by `annualization_factor`, then turned back into a % change.
 
     Yields no rows at a frequency the windows don't divide into.
     """
-    front = PeriodInterval.months(1)
-    back = PeriodInterval.months(18)
     frequency = df["frequency"].iloc[0]
     front_periods, back_periods = front.periods_at(frequency), back.periods_at(frequency)
     if front_periods is None or back_periods is None:
@@ -74,8 +72,8 @@ def sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
 
 
 def ratio_pct(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
-    """a as a % of b per (country, period)."""
-    return _combine(a, b, lambda x, y: x / y * 100)
+    """a as a % (decimal) of b per (country, period)."""
+    return _combine(a, b, lambda x, y: x / y)
 
 
 def _combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Series], pd.Series]) -> pd.DataFrame:
