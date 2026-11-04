@@ -101,3 +101,41 @@ def test_duplicate_series(tmp_path):
     write_config(tmp_path, "indicator,frequency,dataflow\nReal GDP,Q,A:B\nReal GDP,Q,A:C\n")
     with pytest.raises(ConfigError, match="oecd/Real GDP/Q"):
         load_all_series(tmp_path)
+
+
+def test_load_transformations(tmp_path):
+    """Rows parse into TransformSpecs; unknown indicators, bad labels and duplicates raise ConfigError."""
+    from macroscan.a_core.a1_config import load_transformations
+    from macroscan.a_core.a2_schema import Transformation
+
+    indicators = {"Real GDP": "", "Real Growth (%)": "", "CPI Inflation": ""}
+    path = tmp_path / "t.csv"
+    header = "new_indicator,old_indicator,transformation\n"
+
+    path.write_text(header + "Real Growth (%),Real GDP,y/y % change\n")
+    [spec] = load_transformations(path, indicators)
+    assert spec.transformation is Transformation.YOY_PCT and spec.old_indicator == "Real GDP"
+
+    for bad in [
+        "Nope,Real GDP,Y/Y % Change",
+        "Real Growth (%),Real GDP,Squared",
+        "Real GDP,Real GDP,Y/Y % Change",
+        "Real Growth (%),Real GDP,Y/Y % Change\nReal Growth (%),CPI Inflation,Y/Y % Change",
+    ]:
+        path.write_text(header + bad + "\n")
+        with pytest.raises(ConfigError):
+            load_transformations(path, indicators)
+
+
+def test_load_table_indicators(tmp_path):
+    """The listed indicators come back in file order; unknown or repeated ones raise ConfigError."""
+    from macroscan.a_core.a1_config import load_table_indicators
+
+    indicators = {"Real GDP": "", "CPI Inflation": ""}
+    path = tmp_path / "t.csv"
+    path.write_text("indicator\nCPI Inflation\nReal GDP\n")
+    assert load_table_indicators(path, indicators) == ["CPI Inflation", "Real GDP"]
+    for bad in ["Nope", "Real GDP\nReal GDP", ""]:
+        path.write_text("indicator\n" + bad + "\n")
+        with pytest.raises(ConfigError):
+            load_table_indicators(path, indicators)

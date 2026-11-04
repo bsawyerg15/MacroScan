@@ -19,9 +19,13 @@ def series_label(row: str, country: str) -> str:
     return f"{country} · {row}"
 
 
-def latest_table(data: dict[str, pd.DataFrame], countries: list[str]) -> pd.DataFrame:
-    """Last value per indicator (rows) and country (columns, in `countries` order)."""
-    frames = [_labelled(df) for df in data.values()]
+def latest_table(data: dict[str, pd.DataFrame], countries: list[str], indicators: list[str] | None = None) -> pd.DataFrame:
+    """Last value per indicator (rows) and country (columns, in `countries` order).
+
+    `indicators` limits the rows to those indicators; None shows all.
+    """
+    frames = [_labelled(df if indicators is None else df[df["indicator"].isin(indicators)]) for df in data.values()]
+    frames = [f for f in frames if len(f)]
     if not frames:
         return pd.DataFrame(columns=countries, dtype=float)
     long = pd.concat([f.sort_values("period").groupby(["row", "country"]).tail(1) for f in frames])

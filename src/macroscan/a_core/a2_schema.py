@@ -8,6 +8,8 @@ at the chart boundary.
 
 from __future__ import annotations
 
+from enum import Enum
+
 import pandas as pd
 
 # Columns a source's fetch() must return, in order.
@@ -27,6 +29,23 @@ STORED_COLUMNS = [*FETCH_COLUMNS, "pulled_at"]
 
 # Our frequency codes (SDMX style) -> pandas period aliases.
 PANDAS_FREQ = {"A": "Y", "Q": "Q", "M": "M"}
+
+
+# Periods back that count as "a year ago", per frequency.
+PERIODS_PER_YEAR = {"A": 1, "Q": 4, "M": 12}
+
+
+class Transformation(Enum):
+    """How a derived indicator is computed from another; the value is the label used in config."""
+    YOY_PCT = "Y/Y % Change"
+
+    @classmethod
+    def parse(cls, text: str) -> Transformation:
+        """Look up a transformation by its config label (case-insensitive)."""
+        for t in cls:
+            if t.value.lower() == text.strip().lower():
+                return t
+        raise ValueError(f"unknown transformation {text!r}; expected one of {[t.value for t in cls]}")
 
 
 def parse_periods(values: pd.Series | list[str], frequency: str) -> pd.Series:

@@ -11,11 +11,13 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from macroscan.a_core.a2_schema import PANDAS_FREQ
+from macroscan.a_core.a2_schema import PANDAS_FREQ, Transformation
 
 DEFAULT_CONFIG_DIR = Path("config")
 INDICATORS_FILE = "00_indicators.csv"
 COUNTRIES_FILE = "01_countries.csv"
+TRANSFORMATIONS_FILE = "03_transformations.csv"
+TABLE_FILE = "04_table.csv"  # not *_indicators.csv, which would be read as a source
 SERIES_SUFFIX = "_indicators.csv"  # e.g. 02_oecd_indicators.csv -> source "oecd"
 
 # Accepted start/end formats per frequency; a bare year works for any frequency.
@@ -57,6 +59,14 @@ class SeriesSpec:
     def label(self) -> str:
         """'oecd/Real GDP/Q', for logs and error messages."""
         return f"{self.source}/{self.indicator}/{self.frequency}"
+
+
+@dataclass(frozen=True)
+class TransformSpec:
+    """Derive `new_indicator` by applying `transformation` to each series of `old_indicator`."""
+    new_indicator: str
+    old_indicator: str
+    transformation: Transformation
 
 
 def slug(indicator: str) -> str:
@@ -132,6 +142,44 @@ def load_indicators(path: Path) -> dict[str, str]:
     if not indicators:
         raise ConfigError(f"{path}: no indicators configured")
     return indicators
+
+
+def load_transformations(path: Path, indicators: dict[str, str]) -> list[TransformSpec]:
+    """Load and validate the transformations CSV; both indicators must be in the registry."""
+    specs: list[TransformSpec] = []
+    seen: set[str] = set()
+    for n, row in enumerate(_read_rows(path, {"new_indicator", "old_indicator", "transformation"}), start=2):
+        where = f"{path} row {n}"
+        new, old = row["new_indicator"], row["old_indicator"]
+        for name in (new, old):
+            if name not in indicators:
+                raise ConfigError(f"{where}: unknown indicator {name!r}; add it to {INDICATORS_FILE}")
+        if new == old:
+            raise ConfigError(f"{where}: {new!r} cannot be derived from itself")
+        if new in seen:
+            raise ConfigError(f"{where}: duplicate new indicator {new!r}")
+        seen.add(new)
+        try:
+            transformation = Transformation.parse(row["transformation"])
+        except ValueError as e:
+            raise ConfigError(f"{where}: {e}") from None
+        specs.append(TransformSpec(new_indicator=new, old_indicator=old, transformation=transformation))
+    return specs
+
+
+def load_table_indicators(path: Path, indicators: dict[str, str]) -> list[str]:
+    """Load the indicators the app's table shows, in file order; each must be in the registry."""
+    shown: list[str] = []
+    for n, row in enumerate(_read_rows(path, {"indicator"}), start=2):
+        name = row["indicator"]
+        if name not in indicators:
+            raise ConfigError(f"{path} row {n}: unknown indicator {name!r}; add it to {INDICATORS_FILE}")
+        if name in shown:
+            raise ConfigError(f"{path} row {n}: duplicate indicator {name!r}")
+        shown.append(name)
+    if not shown:
+        raise ConfigError(f"{path}: no table indicators configured")
+    return shown
 
 
 def load_series(path: Path, source: str, indicators: dict[str, str]) -> list[SeriesSpec]:

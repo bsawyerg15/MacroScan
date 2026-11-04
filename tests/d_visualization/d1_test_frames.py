@@ -49,6 +49,13 @@ def test_latest_table(tmp_path):
     assert np.isnan(table.at["Unemployment (M)", "DEU"]) and table["JPN"].isna().all()
 
 
+def test_latest_table_limits_indicators(tmp_path):
+    """Only the listed indicators become rows; an empty selection gives an empty table."""
+    data = ingested(tmp_path)
+    assert list(latest_table(data, ["USA"], ["Unemployment"]).index) == ["Unemployment (M)"]
+    assert latest_table(data, ["USA"], ["Nope"]).empty
+
+
 def test_chart_series(tmp_path):
     """One named column per pick on a shared timestamp index."""
     chart = chart_series(ingested(tmp_path), [("Real GDP (Q)", "USA"), ("Unemployment (M)", "USA")])

@@ -10,6 +10,26 @@
       "console": "integratedTerminal"
     },
     {
+      "name": "Ingest",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "macroscan.b_ingest.b4_run",
+      "args": ["-v", "ingest"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Ingest (pick indicator)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "macroscan.b_ingest.b4_run",
+      "args": ["-v", "ingest", "--only", "${input:indicator}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
       "name": "Streamlit app",
       "type": "debugpy",
       "request": "launch",
@@ -18,6 +38,13 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "indicator",
+      "type": "promptString",
+      "description": "Indicator or indicator/frequency, e.g. Real GDP or Real GDP/Q"
     }
   ]
 }
