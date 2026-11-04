@@ -56,6 +56,8 @@ class Indicator(StrEnum):
     HH_DEBT_LEVEL = auto(), "HH Debt Level", "Outstanding household debt"
     HH_DEBT_LEVEL_GDP = auto(), "HH Debt Level % GDP", "Outstanding household debt as a % of nominal GDP"
     BUS_DEBT_LEVEL = auto(), "Bus. Debt Level", "Outstanding non-financial business debt"
+    BUS_LOANS = auto(), "Bus. Loans", "Outstanding loans of non-financial corporations"
+    BUS_DEBT_SECURITIES = auto(), "Bus. Debt Securities", "Outstanding debt securities issued by non-financial corporations"
     BUS_DEBT_LEVEL_GDP = auto(), "Bus. Debt Level % GDP", "Outstanding non-financial business debt as a % of nominal GDP"
     GOVT_DEBT_LEVEL = auto(), "Govt. Debt Level", "Outstanding general government debt"
     GOVT_DEBT_LEVEL_GDP = auto(), "Govt. Debt Level % GDP", "Outstanding general government debt as a % of nominal GDP"
