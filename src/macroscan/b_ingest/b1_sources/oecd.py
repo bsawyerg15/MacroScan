@@ -158,7 +158,7 @@ def build_key(structure: Structure, filters: dict[str, tuple[str, ...]], countri
             f"Valid dimensions: {', '.join(dim_ids)}"
         )
     if COUNTRY_DIM in filters:
-        raise ValueError(f"{COUNTRY_DIM} comes from 01_countries.csv; remove it from filters")
+        raise ValueError(f"{COUNTRY_DIM} comes from Country (a4_countries.py); remove it from filters")
     if COUNTRY_DIM not in dim_ids:
         raise ValueError(f"{structure.dataflow} has no {COUNTRY_DIM} dimension")
 
@@ -367,7 +367,7 @@ def describe(structure: Structure, dim: str | None = None, limit: int = 25) -> s
     dims = [structure.dimension(dim)] if dim else structure.dimensions
     for d in dims:
         codes = d.available if d.available is not None else list(d.codes)
-        note = " (filled from 01_countries.csv)" if d.id == COUNTRY_DIM else ""
+        note = " (filled from Country)" if d.id == COUNTRY_DIM else ""
         lines.append(f"{d.position:>2}. {d.id} — {d.name}: {len(codes)} codes with data{note}")
         shown = codes if dim else codes[:limit]
         for c in shown:

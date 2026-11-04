@@ -7,7 +7,8 @@ import logging
 import sys
 from pathlib import Path
 
-from macroscan.a_core.a1_config import COUNTRIES_FILE, DEFAULT_CONFIG_DIR, load_all_series, load_countries
+from macroscan.a_core.a1_config import DEFAULT_CONFIG_DIR, load_all_series
+from macroscan.a_core.a4_countries import Country
 from macroscan.b_ingest.b1_sources import SOURCES
 from macroscan.b_ingest.b1_sources.oecd import OECDSource, describe
 from macroscan.b_ingest.b2_validate import validate_frame
@@ -26,7 +27,7 @@ def ingest(
 
     `only` entries are an indicator ('REAL_GDP') or an indicator/frequency ('REAL_GDP/Q').
     """
-    countries = load_countries(config_dir / COUNTRIES_FILE)
+    countries = list(Country)
     specs = load_all_series(config_dir)
     if only:
         def selectors(s):

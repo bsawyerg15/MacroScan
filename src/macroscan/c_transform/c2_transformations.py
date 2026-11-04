@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 
 from macroscan.a_core.a2_schema import PERIODS_PER_YEAR, PeriodInterval, to_wide
@@ -39,6 +40,29 @@ def ma(df: pd.DataFrame, window: PeriodInterval) -> pd.DataFrame:
     return _combine(df, means, lambda _, mean: mean)
 
 
+def ma_change_pct_yoy(df: pd.DataFrame) -> pd.DataFrame:
+    """% change (as a decimal) of the latest 1-month mean vs the mean of the 18 months before it.
+
+    Computed in logs, scaled by `annualization_factor`, then turned back into a % change.
+
+    Yields no rows at a frequency the windows don't divide into.
+    """
+    front = PeriodInterval.months(1)
+    back = PeriodInterval.months(18)
+    frequency = df["frequency"].iloc[0]
+    front_periods, back_periods = front.periods_at(frequency), back.periods_at(frequency)
+    if front_periods is None or back_periods is None:
+        return df.iloc[0:0]
+    # Move each back-end mean onto the period whose front-end window starts right after it.
+    back_means = ma(df, back)
+    back_means = back_means.assign(period=back_means["period"] + front_periods)
+    # TODO: evaluate annualizing, e.g. 12 / ((front + back months) / 2) to scale by the gap between window midpoints.
+    annualization_factor = 1
+    return _combine(
+        ma(df, front), back_means, lambda now, then: np.exp((np.log(now) - np.log(then)) * annualization_factor) - 1
+    )
+
+
 def add(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame:
     """a + b per (country, period)."""
     return _combine(a, b, lambda x, y: x + y)
@@ -64,4 +88,4 @@ def _combine(a: pd.DataFrame, b: pd.DataFrame, op: Callable[[pd.Series, pd.Serie
     return out.dropna(subset=["value"]).reset_index(drop=True)
 
 
-__all__ = ["yoy_pct", "ma", "add", "sub", "ratio_pct"]
+__all__ = ["yoy_pct", "ma", "ma_change_pct_yoy", "add", "sub", "ratio_pct"]

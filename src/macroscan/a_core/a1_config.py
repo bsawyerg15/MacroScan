@@ -1,6 +1,6 @@
-"""Load the CSV config files: countries, each source's series and the app table.
+"""Load the CSV config files: each source's series and the app table.
 
-Countries are defined in `a4_countries.Country`; 01_countries.csv picks which to use by ISO3 code.
+Countries are not configured here: every `a4_countries.Country` is ingested and shown.
 
 An indicator is a concept (REAL_GDP), defined in `a3_indicators.Indicator`; CSVs name it by
 member name. Each source's NN_<source>_indicators.csv maps an (indicator, frequency) to how
@@ -16,10 +16,8 @@ from pathlib import Path
 
 from macroscan.a_core.a2_schema import PANDAS_FREQ
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.a_core.a4_countries import Country
 
 DEFAULT_CONFIG_DIR = Path("config")
-COUNTRIES_FILE = "01_countries.csv"
 TABLE_FILE = "04_table.csv"  # not *_indicators.csv, which would be read as a source
 SERIES_SUFFIX = "_indicators.csv"  # e.g. 02_oecd_indicators.csv -> source "oecd"
 
@@ -94,22 +92,6 @@ def _read_rows(path: Path, required: set[str]) -> list[dict[str, str]]:
         rows = [{k: (v or "").strip() for k, v in row.items() if k} for row in reader]
     # Skip blank lines and rows commented out with '#'.
     return [r for r in rows if any(r.values()) and not next(iter(r.values())).startswith("#")]
-
-
-def load_countries(path: Path) -> list[Country]:
-    """Load the countries to ingest and show, in file order; each must be a defined Country."""
-    countries: list[Country] = []
-    for n, row in enumerate(_read_rows(path, {"code"}), start=2):
-        try:
-            country = Country.parse(row["code"])
-        except ValueError as e:
-            raise ConfigError(f"{path} row {n}: {e}") from None
-        if country in countries:
-            raise ConfigError(f"{path} row {n}: duplicate country {country}")
-        countries.append(country)
-    if not countries:
-        raise ConfigError(f"{path}: no countries configured")
-    return countries
 
 
 def _indicator(text: str, where: str) -> Indicator:

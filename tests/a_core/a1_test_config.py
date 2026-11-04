@@ -3,17 +3,14 @@ from pathlib import Path
 import pytest
 
 from macroscan.a_core.a1_config import (
-    COUNTRIES_FILE,
     TABLE_FILE,
     ConfigError,
     load_all_series,
-    load_countries,
     load_table_indicators,
     parse_filters,
     slug,
 )
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.a_core.a4_countries import Country
 
 REPO_CONFIG = Path(__file__).resolve().parents[2] / "config"
 
@@ -37,10 +34,8 @@ def write_config(tmp_path, series_csv: str):
 
 
 def test_load_config(tmp_path):
-    """Countries and series load, skipping commented and blank rows."""
-    (tmp_path / "01_countries.csv").write_text("code\nUSA\n#FRA\n\nDEU\n")
-    write_config(tmp_path, "indicator,frequency,name,dataflow,filters,start\nREAL_GDP,q,GDP,A:DSD@DF,SECTOR=S1,1990\n")
-    assert load_countries(tmp_path / "01_countries.csv") == [Country.USA, Country.DEU]
+    """Series load, skipping commented and blank rows."""
+    write_config(tmp_path, "indicator,frequency,name,dataflow,filters,start\n#REAL_GDP,A,GDP,X:Y,,\n\nREAL_GDP,q,GDP,A:DSD@DF,SECTOR=S1,1990\n")
     [spec] = load_all_series(tmp_path)
     assert (spec.source, spec.indicator, spec.frequency, spec.filters, spec.start, spec.end) == (
         "oecd", Indicator.REAL_GDP, "Q", {"SECTOR": ("S1",)}, "1990", None
@@ -61,17 +56,6 @@ def test_slug():
     """Slugs are only for file names."""
     assert slug("REAL_GDP") == "real_gdp"
     assert slug("CPI Inflation (y/y)") == "cpi_inflation_y_y"
-
-
-@pytest.mark.parametrize(
-    "rows, match",
-    [("US", "unknown country 'US'"), ("usa", "unknown country 'usa'"), ("USA\nUSA", "duplicate country USA"), ("", "no countries")],
-)
-def test_bad_countries(tmp_path, rows, match):
-    """Countries must be defined Country codes, listed once."""
-    (tmp_path / "01_countries.csv").write_text(f"code\n{rows}\n")
-    with pytest.raises(ConfigError, match=match):
-        load_countries(tmp_path / "01_countries.csv")
 
 
 @pytest.mark.parametrize(
@@ -111,6 +95,5 @@ def test_load_table_indicators(tmp_path):
 
 def test_repo_config_is_consistent():
     """The real config/ loads: every indicator it names is defined in Indicator."""
-    load_countries(REPO_CONFIG / COUNTRIES_FILE)
     load_all_series(REPO_CONFIG)
     load_table_indicators(REPO_CONFIG / TABLE_FILE)

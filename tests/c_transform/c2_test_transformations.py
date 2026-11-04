@@ -1,9 +1,10 @@
+import numpy as np
 import pandas as pd
 import pytest
 
 from macroscan.a_core.a2_schema import FETCH_COLUMNS, PeriodInterval, parse_periods
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.c_transform.c2_transformations import add, ma, ratio_pct, sub, yoy_pct
+from macroscan.c_transform.c2_transformations import add, ma, ma_change_pct_yoy, ratio_pct, sub, yoy_pct
 
 
 def frame(frequency, periods, values, indicator=Indicator.REAL_GDP, country="USA"):
@@ -98,3 +99,20 @@ def test_ma_window_that_does_not_fit_the_frequency_yields_nothing():
     out = ma(frame("A", ["2024", "2025"], [1, 2]), PeriodInterval.months(3))
     assert out.empty
     assert list(out.columns) == FETCH_COLUMNS
+
+
+def test_ma_change_pct_yoy_monthly():
+    """The latest month vs the mean of the 18 before it, as a decimal % change."""
+    periods = [str(p) for p in pd.period_range("2024-01", "2025-08", freq="M")]
+    values = [100.0] * 18 + [110.0, 121.0]
+    out = ma_change_pct_yoy(frame("M", periods, values))
+    assert list(out["period"].astype(str)) == ["2025-07", "2025-08"]
+    back_for_aug = (100.0 * 17 + 110.0) / 18
+    expected = [0.1, 121.0 / back_for_aug - 1]
+    assert out["value"].tolist() == pytest.approx(expected)
+
+
+def test_ma_change_pct_yoy_window_that_does_not_fit_the_frequency_yields_nothing():
+    """One month is no whole number of quarters, so quarterly data gets no rows."""
+    out = ma_change_pct_yoy(frame("Q", ["2024Q1", "2024Q2"], [1, 2]))
+    assert out.empty

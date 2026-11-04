@@ -9,12 +9,11 @@ import pandas as pd
 import streamlit as st
 
 from macroscan.a_core.a1_config import (
-    COUNTRIES_FILE,
     DEFAULT_CONFIG_DIR,
     TABLE_FILE,
-    load_countries,
     load_table_indicators,
 )
+from macroscan.a_core.a4_countries import Country
 from macroscan.b_ingest.b3_store import DEFAULT_ROOT
 from macroscan.c_transform.c1_load import load_ingested
 from macroscan.c_transform.c3_derived import apply_derivations
@@ -33,10 +32,9 @@ def _data() -> dict[str, pd.DataFrame]:
     return apply_derivations(load_ingested(DEFAULT_ROOT))
 
 
-@st.cache_data
 def _countries() -> list[str]:
-    """Country codes in config order."""
-    return load_countries(DEFAULT_CONFIG_DIR / COUNTRIES_FILE)
+    """Country codes in definition order."""
+    return list(Country)
 
 
 @st.cache_data

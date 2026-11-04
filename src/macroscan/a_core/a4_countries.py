@@ -1,7 +1,7 @@
 """The country registry: every country MacroScan knows, keyed by ISO3 code, with a display label.
 
-Code uses `Country.USA`; config CSVs and stored data use "USA". 01_countries.csv picks which
-of these to ingest and show, in order. The label ("United States") is only for display.
+Code uses `Country.USA`; config CSVs and stored data use "USA". Every member is ingested and
+shown, in definition order. The label ("United States") is only for display.
 """
 
 from __future__ import annotations
