@@ -3,12 +3,13 @@ import pytest
 
 from macroscan.a_core.a1_config import TransformSpec
 from macroscan.a_core.a2_schema import FETCH_COLUMNS, Transformation, parse_periods
+from macroscan.a_core.a3_indicators import Indicator
 from macroscan.c_transform.c2_transformations import apply_transformations, yoy_pct
 
-SPEC = TransformSpec("Real Growth (%)", "Real GDP", Transformation.YOY_PCT)
+SPEC = TransformSpec(Indicator.REAL_GROWTH, Indicator.REAL_GDP, Transformation.YOY_PCT)
 
 
-def frame(frequency, periods, values, indicator="Real GDP", country="USA"):
+def frame(frequency, periods, values, indicator=Indicator.REAL_GDP, country="USA"):
     """One country's series in the canonical long format."""
     return pd.DataFrame(
         {
@@ -54,7 +55,7 @@ def test_apply_transformations_appends_derived_indicator():
     data = {"Q": q}
     out = apply_transformations(data, [SPEC])
     assert len(data["Q"]) == 5
-    derived = out["Q"][out["Q"]["indicator"] == "Real Growth (%)"].set_index("country")
+    derived = out["Q"][out["Q"]["indicator"] == Indicator.REAL_GROWTH].set_index("country")
     assert derived["value"].to_dict() == pytest.approx({"USA": 10.0, "DEU": -20.0})
     assert set(derived["unit"]) == {"%"}
     assert out["Q"]["period"].dtype == pd.PeriodDtype("Q")
@@ -62,5 +63,5 @@ def test_apply_transformations_appends_derived_indicator():
 
 def test_apply_transformations_skips_missing_old_indicator():
     """Frequencies without the old indicator are left as they were."""
-    data = {"M": frame("M", ["2025-01"], [1.0], indicator="Unemployment")}
+    data = {"M": frame("M", ["2025-01"], [1.0], indicator=Indicator.UNEMPLOYMENT)}
     assert apply_transformations(data, [SPEC])["M"].equals(data["M"])

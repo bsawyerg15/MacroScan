@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import pandas as pd
 
+from macroscan.a_core.a3_indicators import Indicator
+
 
 def row_label(indicator: str, frequency: str) -> str:
-    """Table row for an (indicator, frequency): 'Real GDP (Q)'."""
-    return f"{indicator} ({frequency})"
+    """Table row for an (indicator, frequency), by its label: 'REAL_GDP' -> 'Real GDP (Q)'."""
+    return f"{Indicator(indicator).label} ({frequency})"
 
 
 def series_label(row: str, country: str) -> str:

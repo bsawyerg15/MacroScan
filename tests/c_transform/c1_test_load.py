@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from macroscan.a_core.a2_schema import FETCH_COLUMNS, parse_periods
+from macroscan.a_core.a3_indicators import Indicator
 from macroscan.b_ingest.b3_store import Store
 from macroscan.c_transform.c1_load import load_ingested
 
@@ -29,12 +30,12 @@ def frame(indicator, frequency, periods):
 def test_load_ingested_groups_by_frequency(tmp_path):
     """Every stored series comes back, grouped by frequency with that frequency's Period dtype."""
     store = Store(tmp_path)
-    store.apply(frame("Real GDP", "Q", ["2025Q1", "2025Q2"]), "oecd", "Real GDP", "Q", pulled_at=T1)
-    store.apply(frame("Unemployment", "M", ["2025-01"]), "oecd", "Unemployment", "M", pulled_at=T1)
-    store.apply(frame("CPI Inflation", "M", ["2025-01"]), "oecd", "CPI Inflation", "M", pulled_at=T1)
+    store.apply(frame(Indicator.REAL_GDP, "Q", ["2025Q1", "2025Q2"]), "oecd", Indicator.REAL_GDP, "Q", pulled_at=T1)
+    store.apply(frame(Indicator.UNEMPLOYMENT, "M", ["2025-01"]), "oecd", Indicator.UNEMPLOYMENT, "M", pulled_at=T1)
+    store.apply(frame(Indicator.CPI_INFLATION, "M", ["2025-01"]), "oecd", Indicator.CPI_INFLATION, "M", pulled_at=T1)
 
     data = load_ingested(tmp_path)
     assert set(data) == {"Q", "M"}  # no annual data stored, so no "A" key
-    assert len(data["Q"]) == 2 and set(data["M"]["indicator"]) == {"Unemployment", "CPI Inflation"}
+    assert len(data["Q"]) == 2 and set(data["M"]["indicator"]) == {Indicator.UNEMPLOYMENT, Indicator.CPI_INFLATION}
     assert data["M"]["period"].dtype == pd.PeriodDtype("M")
     assert set(load_ingested(tmp_path, ["Q"])) == {"Q"}

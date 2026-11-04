@@ -3,6 +3,7 @@ import pytest
 import responses
 
 from macroscan.a_core.a1_config import SeriesSpec
+from macroscan.a_core.a3_indicators import Indicator
 from macroscan.b_ingest.b1_sources.oecd import BASE_URL, Dataflow, OECDClient, OECDSource, build_key, normalize, parse_structure
 from macroscan.b_ingest.b2_validate import validate_frame
 
@@ -11,7 +12,7 @@ GDP_FILTERS = {
     "ADJUSTMENT": ("Y",), "SECTOR": ("S1",), "TRANSACTION": ("B1GQ",),
     "UNIT_MEASURE": ("XDC",), "PRICE_BASE": ("LR",), "TRANSFORMATION": ("LA",),
 }
-SPEC = SeriesSpec("oecd", "Real GDP", "Q", FLOW, GDP_FILTERS, start="2025-Q1")
+SPEC = SeriesSpec("oecd", Indicator.REAL_GDP, "Q", FLOW, GDP_FILTERS, start="2025-Q1")
 
 
 def test_dataflow_parse():
@@ -50,7 +51,7 @@ def test_normalize(qna_structure_payload, qna_gdp_csv):
     s = parse_structure(qna_structure_payload, Dataflow.parse(FLOW))
     df = validate_frame(normalize(qna_gdp_csv, SPEC, s), SPEC)
     assert set(df["country"]) == {"USA", "DEU"}
-    assert set(df["indicator"]) == {"Real GDP"} and set(df["frequency"]) == {"Q"}
+    assert set(df["indicator"]) == {Indicator.REAL_GDP} and set(df["frequency"]) == {"Q"}
     assert df["period"].dtype == pd.PeriodDtype("Q")
     assert df["period"].min() == pd.Period("2025Q1")
     assert df["unit"].iloc[0] == "XDC (millions)"
@@ -70,7 +71,7 @@ def test_normalize_rejects_other_frequency(qna_structure_payload, qna_gdp_csv):
     """A response at a different frequency than configured is an error."""
     s = parse_structure(qna_structure_payload, Dataflow.parse(FLOW))
     with pytest.raises(ValueError, match="expected frequency M"):
-        normalize(qna_gdp_csv, SeriesSpec("oecd", "Real GDP", "M", FLOW, GDP_FILTERS), s)
+        normalize(qna_gdp_csv, SeriesSpec("oecd", Indicator.REAL_GDP, "M", FLOW, GDP_FILTERS), s)
 
 
 @responses.activate

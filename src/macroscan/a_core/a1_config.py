@@ -1,7 +1,10 @@
-"""Load the CSV config files: the indicator registry, countries, and each source's series.
+"""Load the CSV config files: countries, each source's series, transformations and the app table.
 
-An indicator is a concept ("Real GDP"), named in 00_indicators.csv. Each source's
-NN_<source>_indicators.csv maps an (indicator, frequency) to how that source serves it.
+Countries are defined in `a4_countries.Country`; 01_countries.csv picks which to use by ISO3 code.
+
+An indicator is a concept (REAL_GDP), defined in `a3_indicators.Indicator`; CSVs name it by
+member name. Each source's NN_<source>_indicators.csv maps an (indicator, frequency) to how
+that source serves it.
 """
 
 from __future__ import annotations
@@ -12,9 +15,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from macroscan.a_core.a2_schema import PANDAS_FREQ, Transformation
+from macroscan.a_core.a3_indicators import Indicator
+from macroscan.a_core.a4_countries import Country
 
 DEFAULT_CONFIG_DIR = Path("config")
-INDICATORS_FILE = "00_indicators.csv"
 COUNTRIES_FILE = "01_countries.csv"
 TRANSFORMATIONS_FILE = "03_transformations.csv"
 TABLE_FILE = "04_table.csv"  # not *_indicators.csv, which would be read as a source
@@ -33,21 +37,14 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True)
-class Country:
-    """A country to ingest, identified by its ISO3 code."""
-    code: str  # ISO3
-    name: str
-
-
-@dataclass(frozen=True)
 class SeriesSpec:
     """One source's series for an (indicator, frequency): where to fetch it and how to filter it.
 
-    `indicator` is a conceptual indicator from 00_indicators.csv; `filters` maps dimension
-    id -> allowed codes (frequency is not among them); `start`/`end` bound the periods fetched.
+    `filters` maps dimension id -> allowed codes (frequency is not among them); `start`/`end`
+    bound the periods fetched.
     """
     source: str
-    indicator: str
+    indicator: Indicator
     frequency: str
     dataflow: str
     filters: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -57,20 +54,20 @@ class SeriesSpec:
 
     @property
     def label(self) -> str:
-        """'oecd/Real GDP/Q', for logs and error messages."""
+        """'oecd/REAL_GDP/Q', for logs and error messages."""
         return f"{self.source}/{self.indicator}/{self.frequency}"
 
 
 @dataclass(frozen=True)
 class TransformSpec:
     """Derive `new_indicator` by applying `transformation` to each series of `old_indicator`."""
-    new_indicator: str
-    old_indicator: str
+    new_indicator: Indicator
+    old_indicator: Indicator
     transformation: Transformation
 
 
 def slug(indicator: str) -> str:
-    """Filesystem-safe form of an indicator name: 'Real GDP' -> 'real_gdp'. Not an identifier."""
+    """Filesystem-safe form of an indicator name: 'REAL_GDP' -> 'real_gdp'. Not an identifier."""
     return re.sub(r"[^a-z0-9]+", "_", indicator.lower()).strip("_")
 
 
@@ -109,51 +106,36 @@ def _read_rows(path: Path, required: set[str]) -> list[dict[str, str]]:
 
 
 def load_countries(path: Path) -> list[Country]:
-    """Load and validate the countries list (ISO3 codes, no duplicates)."""
+    """Load the countries to ingest and show, in file order; each must be a defined Country."""
     countries: list[Country] = []
-    seen: set[str] = set()
-    for row in _read_rows(path, {"code"}):
-        code = row["code"].upper()
-        if len(code) != 3 or not code.isalpha():
-            raise ConfigError(f"{path}: country code {code!r} is not ISO3")
-        if code in seen:
-            raise ConfigError(f"{path}: duplicate country {code}")
-        seen.add(code)
-        countries.append(Country(code=code, name=row.get("name", "")))
+    for n, row in enumerate(_read_rows(path, {"code"}), start=2):
+        try:
+            country = Country.parse(row["code"])
+        except ValueError as e:
+            raise ConfigError(f"{path} row {n}: {e}") from None
+        if country in countries:
+            raise ConfigError(f"{path} row {n}: duplicate country {country}")
+        countries.append(country)
     if not countries:
         raise ConfigError(f"{path}: no countries configured")
     return countries
 
 
-def load_indicators(path: Path) -> dict[str, str]:
-    """Load the indicator registry: indicator name -> description."""
-    indicators: dict[str, str] = {}
-    slugs: dict[str, str] = {}
-    for row in _read_rows(path, {"indicator"}):
-        name = row["indicator"]
-        if not slug(name):
-            raise ConfigError(f"{path}: indicator {name!r} needs at least one letter or digit")
-        clash = slugs.get(slug(name))
-        if clash is not None:
-            what = "duplicate indicator" if clash.lower() == name.lower() else "indicators too similar"
-            raise ConfigError(f"{path}: {what}: {clash!r} and {name!r}")
-        slugs[slug(name)] = name
-        indicators[name] = row.get("description", "")
-    if not indicators:
-        raise ConfigError(f"{path}: no indicators configured")
-    return indicators
+def _indicator(text: str, where: str) -> Indicator:
+    """The Indicator named `text`, or a ConfigError pointing at `where`."""
+    try:
+        return Indicator.parse(text)
+    except ValueError as e:
+        raise ConfigError(f"{where}: {e}") from None
 
 
-def load_transformations(path: Path, indicators: dict[str, str]) -> list[TransformSpec]:
-    """Load and validate the transformations CSV; both indicators must be in the registry."""
+def load_transformations(path: Path) -> list[TransformSpec]:
+    """Load and validate the transformations CSV; both indicators must be defined Indicators."""
     specs: list[TransformSpec] = []
     seen: set[str] = set()
     for n, row in enumerate(_read_rows(path, {"new_indicator", "old_indicator", "transformation"}), start=2):
         where = f"{path} row {n}"
-        new, old = row["new_indicator"], row["old_indicator"]
-        for name in (new, old):
-            if name not in indicators:
-                raise ConfigError(f"{where}: unknown indicator {name!r}; add it to {INDICATORS_FILE}")
+        new, old = _indicator(row["new_indicator"], where), _indicator(row["old_indicator"], where)
         if new == old:
             raise ConfigError(f"{where}: {new!r} cannot be derived from itself")
         if new in seen:
@@ -167,13 +149,11 @@ def load_transformations(path: Path, indicators: dict[str, str]) -> list[Transfo
     return specs
 
 
-def load_table_indicators(path: Path, indicators: dict[str, str]) -> list[str]:
-    """Load the indicators the app's table shows, in file order; each must be in the registry."""
-    shown: list[str] = []
+def load_table_indicators(path: Path) -> list[Indicator]:
+    """Load the indicators the app's table shows, in file order; each must be a defined Indicator."""
+    shown: list[Indicator] = []
     for n, row in enumerate(_read_rows(path, {"indicator"}), start=2):
-        name = row["indicator"]
-        if name not in indicators:
-            raise ConfigError(f"{path} row {n}: unknown indicator {name!r}; add it to {INDICATORS_FILE}")
+        name = _indicator(row["indicator"], f"{path} row {n}")
         if name in shown:
             raise ConfigError(f"{path} row {n}: duplicate indicator {name!r}")
         shown.append(name)
@@ -182,14 +162,12 @@ def load_table_indicators(path: Path, indicators: dict[str, str]) -> list[str]:
     return shown
 
 
-def load_series(path: Path, source: str, indicators: dict[str, str]) -> list[SeriesSpec]:
+def load_series(path: Path, source: str) -> list[SeriesSpec]:
     """Load and validate one source's series CSV into SeriesSpecs."""
     specs: list[SeriesSpec] = []
     for n, row in enumerate(_read_rows(path, {"indicator", "frequency", "dataflow"}), start=2):
         where = f"{path} row {n}"
-        indicator, frequency = row["indicator"], row["frequency"].upper()
-        if indicator not in indicators:
-            raise ConfigError(f"{where}: unknown indicator {indicator!r}; add it to {INDICATORS_FILE}")
+        indicator, frequency = _indicator(row["indicator"], where), row["frequency"].upper()
         if frequency not in PANDAS_FREQ:
             raise ConfigError(f"{where}: frequency {frequency!r} must be one of {', '.join(PANDAS_FREQ)}")
         if not row["dataflow"]:
@@ -223,8 +201,6 @@ def series_files(config_dir: Path) -> dict[str, Path]:
     """Map source name -> its series CSV, e.g. {'oecd': config/02_oecd_indicators.csv}."""
     files: dict[str, Path] = {}
     for path in sorted(config_dir.glob(f"*{SERIES_SUFFIX}")):
-        if path.name == INDICATORS_FILE:
-            continue
         stem = path.name[: -len(SERIES_SUFFIX)]
         source = stem.split("_", 1)[1] if stem[:1].isdigit() and "_" in stem else stem
         files[source] = path
@@ -233,8 +209,7 @@ def series_files(config_dir: Path) -> dict[str, Path]:
 
 def load_all_series(config_dir: Path = DEFAULT_CONFIG_DIR) -> list[SeriesSpec]:
     """Load every source's series CSV; each (source, indicator, frequency) may appear once."""
-    indicators = load_indicators(config_dir / INDICATORS_FILE)
-    specs = [s for source, path in series_files(config_dir).items() for s in load_series(path, source, indicators)]
+    specs = [s for source, path in series_files(config_dir).items() for s in load_series(path, source)]
     labels = [s.label for s in specs]
     dupes = {label for label in labels if labels.count(label) > 1}
     if dupes:

@@ -24,9 +24,9 @@ def ingest(
 ) -> int:
     """Fetch every configured series and append changes. Returns the number of failures.
 
-    `only` entries are an indicator ('Real GDP') or an indicator/frequency ('Real GDP/Q').
+    `only` entries are an indicator ('REAL_GDP') or an indicator/frequency ('REAL_GDP/Q').
     """
-    countries = [c.code for c in load_countries(config_dir / COUNTRIES_FILE)]
+    countries = load_countries(config_dir / COUNTRIES_FILE)
     specs = load_all_series(config_dir)
     if only:
         def selectors(s):
@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     p_ingest = sub.add_parser("ingest", help="fetch configured series and store what changed")
     p_ingest.add_argument(
         "--only", nargs="+", metavar="INDICATOR[/FREQ]",
-        help="ingest only these indicators, e.g. 'Real GDP' or 'Real GDP/Q' (quote names with spaces)",
+        help="ingest only these indicators, e.g. REAL_GDP or REAL_GDP/Q",
     )
     p_ingest.add_argument("--refresh-structures", action="store_true", help="re-download cached dataflow structures")
 

@@ -1,5 +1,4 @@
 indicator
-Real Growth (%)
-CPI Inflation
-Unemployment
-Composite Leading Indicator
+REAL_GROWTH
+CPI_INFLATION
+UNEMPLOYMENT

@@ -3,9 +3,10 @@ import pytest
 
 from macroscan.a_core.a1_config import SeriesSpec
 from macroscan.a_core.a2_schema import FETCH_COLUMNS, parse_periods
+from macroscan.a_core.a3_indicators import Indicator
 from macroscan.b_ingest.b2_validate import SchemaError, validate_frame
 
-SPEC = SeriesSpec("oecd", "Real GDP", "Q", "A:B")
+SPEC = SeriesSpec("oecd", Indicator.REAL_GDP, "Q", "A:B")
 
 
 def frame(**overrides):
@@ -13,7 +14,7 @@ def frame(**overrides):
     df = pd.DataFrame(
         {
             "source": "oecd",
-            "indicator": "Real GDP",
+            "indicator": Indicator.REAL_GDP,
             "country": ["USA", "DEU"],
             "period": parse_periods(["2025Q1", "2025Q1"], "Q"),
             "frequency": "Q",
@@ -34,7 +35,7 @@ def test_valid_frame_passes():
 @pytest.mark.parametrize(
     "overrides, match",
     [
-        ({"indicator": "CPI Inflation"}, "expected indicator 'Real GDP'"),
+        ({"indicator": Indicator.CPI_INFLATION}, "expected indicator 'REAL_GDP'"),
         ({"frequency": "M"}, "expected frequency 'Q'"),
         ({"source": "imf"}, "expected source 'oecd'"),
         ({"period": parse_periods(["2025-01", "2025-01"], "M")}, "does not match frequency Q"),

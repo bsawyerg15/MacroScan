@@ -11,11 +11,9 @@ import streamlit as st
 from macroscan.a_core.a1_config import (
     COUNTRIES_FILE,
     DEFAULT_CONFIG_DIR,
-    INDICATORS_FILE,
     TABLE_FILE,
     TRANSFORMATIONS_FILE,
     load_countries,
-    load_indicators,
     load_table_indicators,
     load_transformations,
 )
@@ -34,22 +32,20 @@ COLORS_KEY = "colors"  # charted label -> palette color
 @st.cache_data
 def _data() -> dict[str, pd.DataFrame]:
     """Ingested data plus configured derived indicators, built once per session."""
-    indicators = load_indicators(DEFAULT_CONFIG_DIR / INDICATORS_FILE)
-    specs = load_transformations(DEFAULT_CONFIG_DIR / TRANSFORMATIONS_FILE, indicators)
+    specs = load_transformations(DEFAULT_CONFIG_DIR / TRANSFORMATIONS_FILE)
     return apply_transformations(load_ingested(DEFAULT_ROOT), specs)
 
 
 @st.cache_data
 def _countries() -> list[str]:
     """Country codes in config order."""
-    return [c.code for c in load_countries(DEFAULT_CONFIG_DIR / COUNTRIES_FILE)]
+    return load_countries(DEFAULT_CONFIG_DIR / COUNTRIES_FILE)
 
 
 @st.cache_data
 def _table_indicators() -> list[str]:
     """Indicators shown in the table, from config."""
-    indicators = load_indicators(DEFAULT_CONFIG_DIR / INDICATORS_FILE)
-    return load_table_indicators(DEFAULT_CONFIG_DIR / TABLE_FILE, indicators)
+    return load_table_indicators(DEFAULT_CONFIG_DIR / TABLE_FILE)
 
 
 def _color(label: str, picks: list[str]) -> str:
