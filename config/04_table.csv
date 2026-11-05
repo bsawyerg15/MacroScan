@@ -1,7 +1,6 @@
 level,header,indicator
 0,Output,
-1,,REAL_GROWTH
-2,,PGDP_GROWTH
+1,,GROWTH_VS_POTENTIAL
 1,,UNEMPLOYMENT
 1,,SLACK
 0,Inflation,

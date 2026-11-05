@@ -18,7 +18,7 @@ import pandas as pd
 
 from macroscan.a_core.a2_schema import PeriodInterval
 from macroscan.a_core.a3_indicators import Indicator
-from macroscan.c_transform.c2_transformations import add, div, ma_change_pct_yoy, yoy_pct
+from macroscan.c_transform.c2_transformations import add, div, ma_change_pct_yoy, sub, yoy_pct
 
 DERIVED_SOURCE = "derived"
 
@@ -136,6 +136,11 @@ def govt_debt_level_gdp(govt_debt_level, nominal_gdp):
 @derived(unit="%")
 def pgdp_growth(pgdp):
     return yoy_pct(pgdp)
+
+
+@derived(unit="%")
+def growth_vs_potential(real_growth_ma_change, pgdp_growth):
+    return sub(real_growth_ma_change, pgdp_growth)
 
 
 @derived()

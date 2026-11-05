@@ -46,6 +46,7 @@ class Indicator(StrEnum):
     REAL_GROWTH_MA_CHANGE = auto(), "Real Growth MA Change (%)", "% change of real GDP: latest quarter vs the mean of the 18 months before it"
     PGDP = auto(), "Real Potential GDP", "Real potential gross domestic product"
     PGDP_GROWTH = auto(), "PGDP Growth (%)", "Y/Y % change of real potential GDP"
+    GROWTH_VS_POTENTIAL = auto(), "Growth vs Potential (%)", "Real growth MA change minus potential GDP growth"
     NOMINAL_GDP = auto(), "Nominal GDP", "Gross domestic product at current prices"
     NOMINAL_GROWTH = auto(), "Nominal Growth (%)", "Y/Y % change of nominal GDP"
     UNEMPLOYMENT = auto(), "Unemployment (%)", "Unemployment rate"

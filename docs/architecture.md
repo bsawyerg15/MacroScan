@@ -1015,6 +1015,7 @@ flowchart LR
   n_c_transform_c3_derived_govt_debt_flow["c3_derived.govt_debt_flow"]:::ext
   n_c_transform_c3_derived_govt_debt_flow_gdp["c3_derived.govt_debt_flow_gdp"]:::ext
   n_c_transform_c3_derived_govt_debt_level_gdp["c3_derived.govt_debt_level_gdp"]:::ext
+  n_c_transform_c3_derived_growth_vs_potential["c3_derived.growth_vs_potential"]:::ext
   n_c_transform_c3_derived_hh_debt_flow_gdp["c3_derived.hh_debt_flow_gdp"]:::ext
   n_c_transform_c3_derived_hh_debt_level_gdp["c3_derived.hh_debt_level_gdp"]:::ext
   n_c_transform_c3_derived_nominal_growth["c3_derived.nominal_growth"]:::ext
@@ -1040,6 +1041,7 @@ flowchart LR
   n_c_transform_c2_transformations_add --> n_c_transform_c3_derived_govt_debt_flow
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_flow_gdp
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c2_transformations_sub --> n_c_transform_c3_derived_growth_vs_potential
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_flow_gdp
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_level_gdp
   n_c_transform_c2_transformations_yoy_pct --> n_c_transform_c3_derived_nominal_growth
@@ -1064,6 +1066,7 @@ flowchart LR
   click n_c_transform_c3_derived_govt_debt_flow href "#fn-c_transform-c3_derived-govt_debt_flow"
   click n_c_transform_c3_derived_govt_debt_flow_gdp href "#fn-c_transform-c3_derived-govt_debt_flow_gdp"
   click n_c_transform_c3_derived_govt_debt_level_gdp href "#fn-c_transform-c3_derived-govt_debt_level_gdp"
+  click n_c_transform_c3_derived_growth_vs_potential href "#fn-c_transform-c3_derived-growth_vs_potential"
   click n_c_transform_c3_derived_hh_debt_flow_gdp href "#fn-c_transform-c3_derived-hh_debt_flow_gdp"
   click n_c_transform_c3_derived_hh_debt_level_gdp href "#fn-c_transform-c3_derived-hh_debt_level_gdp"
   click n_c_transform_c3_derived_nominal_growth href "#fn-c_transform-c3_derived-nominal_growth"
@@ -1096,6 +1099,7 @@ flowchart LR
 - <a id="fn-c_transform-c2_transformations-sub"></a>**[`sub(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L83)** — a - b per (country, period).
   - returns: `_combine(a, b, lambda x, y: x - y)`: `pd.DataFrame`
   - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
+  - called by: [`c3_derived.growth_vs_potential`](#fn-c_transform-c3_derived-growth_vs_potential)
 - <a id="fn-c_transform-c2_transformations-div"></a>**[`div(a: pd.DataFrame, b: pd.DataFrame) -> pd.DataFrame`](../src/macroscan/c_transform/c2_transformations.py#L88)** — a / b per (country, period); a % (as a decimal) when a is a part of b.
   - returns: `_combine(a, b, lambda x, y: x / y)`: `pd.DataFrame`
   - calls: [`_combine`](#fn-c_transform-c2_transformations-_combine)
@@ -1122,6 +1126,7 @@ flowchart LR
     n_c_transform_c3_derived_govt_debt_flow["govt_debt_flow"]
     n_c_transform_c3_derived_govt_debt_flow_gdp["govt_debt_flow_gdp"]
     n_c_transform_c3_derived_govt_debt_level_gdp["govt_debt_level_gdp"]
+    n_c_transform_c3_derived_growth_vs_potential["growth_vs_potential"]
     n_c_transform_c3_derived_hh_debt_flow_gdp["hh_debt_flow_gdp"]
     n_c_transform_c3_derived_hh_debt_level_gdp["hh_debt_level_gdp"]
     n_c_transform_c3_derived_nominal_growth["nominal_growth"]
@@ -1135,6 +1140,7 @@ flowchart LR
   n_c_transform_c2_transformations_add["c2_transformations.add"]:::ext
   n_c_transform_c2_transformations_div["c2_transformations.div"]:::ext
   n_c_transform_c2_transformations_ma_change_pct_yoy["c2_transformations.ma_change_pct_yoy"]:::ext
+  n_c_transform_c2_transformations_sub["c2_transformations.sub"]:::ext
   n_c_transform_c2_transformations_yoy_pct["c2_transformations.yoy_pct"]:::ext
   n_c_transform_c3_derived_Derivation["c3_derived.Derivation"]:::ext
   n_d_visualization_d2_app__data["d2_app._data"]:::ext
@@ -1156,6 +1162,8 @@ flowchart LR
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_govt_debt_flow_gdp
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_govt_debt_level_gdp
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_govt_debt_level_gdp
+  n_c_transform_c2_transformations_sub --> n_c_transform_c3_derived_growth_vs_potential
+  n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_growth_vs_potential
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_flow_gdp
   n_c_transform_c3_derived_derived --> n_c_transform_c3_derived_hh_debt_flow_gdp
   n_c_transform_c2_transformations_div --> n_c_transform_c3_derived_hh_debt_level_gdp
@@ -1175,6 +1183,7 @@ flowchart LR
   click n_c_transform_c2_transformations_add href "#fn-c_transform-c2_transformations-add"
   click n_c_transform_c2_transformations_div href "#fn-c_transform-c2_transformations-div"
   click n_c_transform_c2_transformations_ma_change_pct_yoy href "#fn-c_transform-c2_transformations-ma_change_pct_yoy"
+  click n_c_transform_c2_transformations_sub href "#fn-c_transform-c2_transformations-sub"
   click n_c_transform_c2_transformations_yoy_pct href "#fn-c_transform-c2_transformations-yoy_pct"
   click n_c_transform_c3_derived_Derivation href "#cls-Derivation"
   click n_c_transform_c3_derived_apply_derivations href "#fn-c_transform-c3_derived-apply_derivations"
@@ -1187,6 +1196,7 @@ flowchart LR
   click n_c_transform_c3_derived_govt_debt_flow href "#fn-c_transform-c3_derived-govt_debt_flow"
   click n_c_transform_c3_derived_govt_debt_flow_gdp href "#fn-c_transform-c3_derived-govt_debt_flow_gdp"
   click n_c_transform_c3_derived_govt_debt_level_gdp href "#fn-c_transform-c3_derived-govt_debt_level_gdp"
+  click n_c_transform_c3_derived_growth_vs_potential href "#fn-c_transform-c3_derived-growth_vs_potential"
   click n_c_transform_c3_derived_hh_debt_flow_gdp href "#fn-c_transform-c3_derived-hh_debt_flow_gdp"
   click n_c_transform_c3_derived_hh_debt_level_gdp href "#fn-c_transform-c3_derived-hh_debt_level_gdp"
   click n_c_transform_c3_derived_nominal_growth href "#fn-c_transform-c3_derived-nominal_growth"
@@ -1205,7 +1215,7 @@ flowchart LR
 - <a id="fn-c_transform-c3_derived-derived"></a>**[`derived(*, unit: str | None=None) -> Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]`](../src/macroscan/c_transform/c3_derived.py#L47)** — Decorator: register the function in DERIVED as the recipe for the Indicator it is named after.
   - returns: `register`: `Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]`
   - calls: [`derivation`](#fn-c_transform-c3_derived-derivation)
-  - called by: [`bus_debt_flow`](#fn-c_transform-c3_derived-bus_debt_flow), [`bus_debt_flow_gdp`](#fn-c_transform-c3_derived-bus_debt_flow_gdp), [`bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level), [`bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`govt_debt_flow`](#fn-c_transform-c3_derived-govt_debt_flow), [`govt_debt_flow_gdp`](#fn-c_transform-c3_derived-govt_debt_flow_gdp), [`govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`hh_debt_flow_gdp`](#fn-c_transform-c3_derived-hh_debt_flow_gdp), [`hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp), [`nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`pgdp_growth`](#fn-c_transform-c3_derived-pgdp_growth), [`real_growth`](#fn-c_transform-c3_derived-real_growth), [`real_growth_ma_change`](#fn-c_transform-c3_derived-real_growth_ma_change)
+  - called by: [`bus_debt_flow`](#fn-c_transform-c3_derived-bus_debt_flow), [`bus_debt_flow_gdp`](#fn-c_transform-c3_derived-bus_debt_flow_gdp), [`bus_debt_level`](#fn-c_transform-c3_derived-bus_debt_level), [`bus_debt_level_gdp`](#fn-c_transform-c3_derived-bus_debt_level_gdp), [`govt_debt_flow`](#fn-c_transform-c3_derived-govt_debt_flow), [`govt_debt_flow_gdp`](#fn-c_transform-c3_derived-govt_debt_flow_gdp), [`govt_debt_level_gdp`](#fn-c_transform-c3_derived-govt_debt_level_gdp), [`growth_vs_potential`](#fn-c_transform-c3_derived-growth_vs_potential), [`hh_debt_flow_gdp`](#fn-c_transform-c3_derived-hh_debt_flow_gdp), [`hh_debt_level_gdp`](#fn-c_transform-c3_derived-hh_debt_level_gdp), [`nominal_growth`](#fn-c_transform-c3_derived-nominal_growth), [`pgdp_growth`](#fn-c_transform-c3_derived-pgdp_growth), [`real_growth`](#fn-c_transform-c3_derived-real_growth), [`real_growth_ma_change`](#fn-c_transform-c3_derived-real_growth_ma_change)
 - <a id="fn-c_transform-c3_derived-ordered"></a>**[`ordered(derivations: dict[Indicator, Derivation]=DERIVED) -> list[Derivation]`](../src/macroscan/c_transform/c3_derived.py#L58)** — The derivations, each after any it builds on; raises graphlib.CycleError on a cycle.
   - returns: `[derivations[i] for i in TopologicalS...`: `list[Derivation]`
   - calls: *(none)*
@@ -1241,19 +1251,22 @@ flowchart LR
 - <a id="fn-c_transform-c3_derived-pgdp_growth"></a>**[`pgdp_growth(pgdp)`](../src/macroscan/c_transform/c3_derived.py#L137)** — *(no docstring)*
   - returns: `yoy_pct(pgdp)`: *(unannotated)*
   - calls: [`c2_transformations.yoy_pct`](#fn-c_transform-c2_transformations-yoy_pct), [`derived`](#fn-c_transform-c3_derived-derived)
-- <a id="fn-c_transform-c3_derived-bus_debt_flow"></a>**[`bus_debt_flow(bus_loans_flow, bus_debt_securities_flow)`](../src/macroscan/c_transform/c3_derived.py#L142)** — *(no docstring)*
+- <a id="fn-c_transform-c3_derived-growth_vs_potential"></a>**[`growth_vs_potential(real_growth_ma_change, pgdp_growth)`](../src/macroscan/c_transform/c3_derived.py#L142)** — *(no docstring)*
+  - returns: `sub(real_growth_ma_change, pgdp_growth)`: *(unannotated)*
+  - calls: [`c2_transformations.sub`](#fn-c_transform-c2_transformations-sub), [`derived`](#fn-c_transform-c3_derived-derived)
+- <a id="fn-c_transform-c3_derived-bus_debt_flow"></a>**[`bus_debt_flow(bus_loans_flow, bus_debt_securities_flow)`](../src/macroscan/c_transform/c3_derived.py#L147)** — *(no docstring)*
   - returns: `add(bus_loans_flow, bus_debt_securiti...`: *(unannotated)*
   - calls: [`c2_transformations.add`](#fn-c_transform-c2_transformations-add), [`derived`](#fn-c_transform-c3_derived-derived)
-- <a id="fn-c_transform-c3_derived-govt_debt_flow"></a>**[`govt_debt_flow(govt_loans_flow, govt_debt_securities_flow)`](../src/macroscan/c_transform/c3_derived.py#L147)** — *(no docstring)*
+- <a id="fn-c_transform-c3_derived-govt_debt_flow"></a>**[`govt_debt_flow(govt_loans_flow, govt_debt_securities_flow)`](../src/macroscan/c_transform/c3_derived.py#L152)** — *(no docstring)*
   - returns: `add(govt_loans_flow, govt_debt_securi...`: *(unannotated)*
   - calls: [`c2_transformations.add`](#fn-c_transform-c2_transformations-add), [`derived`](#fn-c_transform-c3_derived-derived)
-- <a id="fn-c_transform-c3_derived-hh_debt_flow_gdp"></a>**[`hh_debt_flow_gdp(hh_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L154)** — *(no docstring)*
+- <a id="fn-c_transform-c3_derived-hh_debt_flow_gdp"></a>**[`hh_debt_flow_gdp(hh_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L159)** — *(no docstring)*
   - returns: `div(hh_debt_flow, nominal_gdp)`: *(unannotated)*
   - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
-- <a id="fn-c_transform-c3_derived-bus_debt_flow_gdp"></a>**[`bus_debt_flow_gdp(bus_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L159)** — *(no docstring)*
+- <a id="fn-c_transform-c3_derived-bus_debt_flow_gdp"></a>**[`bus_debt_flow_gdp(bus_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L164)** — *(no docstring)*
   - returns: `div(bus_debt_flow, nominal_gdp)`: *(unannotated)*
   - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
-- <a id="fn-c_transform-c3_derived-govt_debt_flow_gdp"></a>**[`govt_debt_flow_gdp(govt_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L164)** — *(no docstring)*
+- <a id="fn-c_transform-c3_derived-govt_debt_flow_gdp"></a>**[`govt_debt_flow_gdp(govt_debt_flow, nominal_gdp)`](../src/macroscan/c_transform/c3_derived.py#L169)** — *(no docstring)*
   - returns: `div(govt_debt_flow, nominal_gdp)`: *(unannotated)*
   - calls: [`c2_transformations.div`](#fn-c_transform-c2_transformations-div), [`derived`](#fn-c_transform-c3_derived-derived)
 - <a id="cls-Derivation"></a>**[class `Derivation`](../src/macroscan/c_transform/c3_derived.py#L27)** — How `indicator` is computed: `func` called with one long frame per input, by lower-cased name.
